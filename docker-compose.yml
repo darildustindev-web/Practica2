@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Base de Datos Central ASFI
+  asfi-db:
+    image: postgres:15-alpine
+    container_name: asfi-db
+    environment:
+      POSTGRES_DB: asfi_db
+      POSTGRES_USER: asfi_user
+      POSTGRES_PASSWORD: asfi_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - asfi_pgdata:/var/lib/postgresql/data
+
+  # Base de Datos Relacional Banco 1 (PostgreSQL)
+  bank1-union-db:
+    image: postgres:15-alpine
+    container_name: bank1-union-db
+    environment:
+      POSTGRES_DB: bank_union
+      POSTGRES_USER: union_user
+      POSTGRES_PASSWORD: union_password
+    ports:
+      - "5433:5432"
+
+  # Base de Datos Relacional Banco 2 (MySQL)
+  bank2-mercantil-db:
+    image: mysql:8.0
+    container_name: bank2-mercantil-db
+    environment:
+      MYSQL_DATABASE: bank_mercantil
+      MYSQL_USER: mercantil_user
+      MYSQL_PASSWORD: mercantil_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3306:3306"
+
+  # Base de Datos NoSQL (MongoDB - Bancos Prodem, Sol, FIE, etc.)
+  banks-nosql-db:
+    image: mongo:6.0
+    container_name: banks-nosql-db
+    ports:
+      - "27017:27017"
+
+  # Base de Datos de Grafos (Neo4j - Banco BDP)
+  bank13-bdp-neo4j:
+    image: neo4j:5.11
+    container_name: bank13-bdp-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/bdp_password
+    ports:
+      - "7474:7474" # HTTP UI
+      - "7687:7687" # Bolt protocol
+
+volumes:
+  asfi_pgdata:
