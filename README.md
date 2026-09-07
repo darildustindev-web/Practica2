@@ -173,6 +173,21 @@ Para que todos los integrantes puedan usar asistentes de IA de forma consistente
 - Docker y Docker Compose instalados.
 - Python 3.11+ instalado.
 
+### Preparar el entorno Python en Linux
+
+Si `.venv/bin/python` no tiene `pip` o aparece `No module named ensurepip`, instala los paquetes del sistema una sola vez:
+
+```bash
+sudo apt update
+sudo apt install python3-venv python3-pip
+rm -rf .venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+En VS Code selecciona `.venv/bin/python` como intérprete de Python.
+
 ### Pasos
 1. **Clonar el repositorio y entrar al proyecto:**
    ```bash
@@ -182,18 +197,231 @@ Para que todos los integrantes puedan usar asistentes de IA de forma consistente
 
 2. **Levantar la infraestructura con Docker Compose:**
    ```bash
-   docker-compose up -d --build
+   sudo docker compose up -d
    ```
 
 3. **Poblar las bases de datos con la muestra del 1%:**
    ```bash
-   python scripts/seeder.py
+   .venv/bin/python scripts/seeder.py dataset.csv --output-dir data/seed
    ```
 
-4. **Probar el Barrido Paralelo de la ASFI:**
+4. **Levantar el BCB:**
+   ```bash
+   cd bcb-service
+   ../.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8001
+   ```
+
+5. **Levantar una API bancaria de prueba, en otra terminal:**
+   ```bash
+   .venv/bin/python scripts/load_postgres.py data/seed/bank_01.jsonl \
+     --database-url "postgresql://union_user:union_password@127.0.0.1:5433/bank_union"
+   BANK_ID=1 BANK_STORAGE=postgres \
+   DATABASE_URL="postgresql://union_user:union_password@127.0.0.1:5433/bank_union" \
+   .venv/bin/uvicorn bank_template.main:app --app-dir banks-services --host 0.0.0.0 --port 8101
+   ```
+
+6. **Levantar ASFI, en otra terminal:**
+   ```bash
+   cd asfi-service
+   BCB_URL=http://localhost:8001/api/bcb/tipo-cambio BANK_URL_1=http://localhost:8101/api/banco ../.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+
+7. **Probar el Barrido Paralelo de la ASFI:**
    ```bash
    curl -X POST http://localhost:8000/api/asfi/ejecutar-conversion
    ```
 
+Banco 2 puede usar MySQL con el mismo contrato:
+
+```bash
+.venv/bin/python scripts/load_mysql.py data/seed/bank_02.jsonl \
+  --database-url "mysql://mercantil_user:mercantil_password@127.0.0.1:3306/bank_mercantil"
+
+BANK_ID=2 BANK_STORAGE=mysql \
+DATABASE_URL="mysql://mercantil_user:mercantil_password@127.0.0.1:3306/bank_mercantil" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8102
+```
+
+Banco 3 puede usar SQLite sin agregar otro contenedor:
+
+```bash
+.venv/bin/python scripts/load_sqlite.py data/seed/bank_03.jsonl \
+  --database-url "sqlite:///data/bank_03.sqlite"
+
+BANK_ID=3 BANK_STORAGE=sqlite \
+DATABASE_URL="sqlite:///data/bank_03.sqlite" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8103
+```
+
+Banco 8 puede usar MongoDB:
+
+```bash
+.venv/bin/python scripts/load_mongo.py data/seed/bank_08.jsonl \
+  --database-url "mongodb://127.0.0.1:27017/bank_prodem"
+
+BANK_ID=8 BANK_STORAGE=mongo \
+DATABASE_URL="mongodb://127.0.0.1:27017/bank_prodem" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8108
+```
+
+Los bancos 9, 10, 11, 12 y 14 reutilizan MongoDB en bases separadas:
+
+```bash
+for spec in \
+  "9 bank_solidario" "10 bank_fortaleza" "11 bank_fie" \
+  "12 bank_pyme" "14 bank_argentina"; do
+  set -- $spec
+  .venv/bin/python scripts/load_mongo.py "data/seed/bank_$(printf '%02d' "$1").jsonl" \
+    --database-url "mongodb://127.0.0.1:27017/$2"
+done
+```
+
+Banco 13 usa Neo4j y crea `Cliente`, `Cuenta` y `TIENE_CUENTA`:
+
+```bash
+.venv/bin/python scripts/load_neo4j.py data/seed/bank_13.jsonl \
+  --database-url "neo4j://neo4j:bdp_password@127.0.0.1:7687"
+```
+
+Banco 10 usa Redis como segundo motor NoSQL:
+
+```bash
+sudo docker compose up -d bank10-fortaleza-redis
+
+.venv/bin/python scripts/load_redis.py data/seed/bank_10.jsonl \
+  --database-url "redis://127.0.0.1:6379/0#bank10"
+
+BANK_ID=10 BANK_STORAGE=redis \
+DATABASE_URL="redis://127.0.0.1:6379/0#bank10" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8110
+```
+
+Banco 4 usa PostgreSQL en una base aislada:
+
+```bash
+sudo docker compose up -d bank4-bcp-db
+
+.venv/bin/python scripts/load_postgres.py data/seed/bank_04.jsonl \
+  --database-url "postgresql://bcp_user:bcp_password@127.0.0.1:5435/bank_bcp"
+
+BANK_ID=4 BANK_STORAGE=postgres \
+DATABASE_URL="postgresql://bcp_user:bcp_password@127.0.0.1:5435/bank_bcp" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8104
+```
+
+Banco 5 usa MySQL en una base aislada:
+
+```bash
+sudo docker compose up -d bank5-bisa-db
+
+.venv/bin/python scripts/load_mysql.py data/seed/bank_05.jsonl \
+  --database-url "mysql://bisa_user:bisa_password@127.0.0.1:3307/bank_bisa"
+
+BANK_ID=5 BANK_STORAGE=mysql \
+DATABASE_URL="mysql://bisa_user:bisa_password@127.0.0.1:3307/bank_bisa" \
+.venv/bin/uvicorn bank_template.main:app --app-dir banks-services --port 8105
+```
+
+Los bancos 6 y 7 usan bases aisladas:
+
+```bash
+sudo docker compose up -d bank6-ganadero-db bank7-economico-db
+
+.venv/bin/python scripts/load_postgres.py data/seed/bank_06.jsonl \
+  --database-url "postgresql://ganadero_user:ganadero_password@127.0.0.1:5436/bank_ganadero"
+.venv/bin/python scripts/load_mysql.py data/seed/bank_07.jsonl \
+  --database-url "mysql://economico_user:economico_password@127.0.0.1:3308/bank_economico"
+```
+
+### Demostración integrada
+
+Con los contenedores Docker activos y los datos de `data/seed` generados, se
+pueden cargar y levantar los bancos 1, 2, 3, 4 y 8 junto con BCB y ASFI:
+
+```bash
+bash scripts/run_demo.sh
+```
+
+El script ejecuta un barrido único con `ACTIVE_BANK_IDS=1,2,3,4,8` como
+demostración parcial.
+
+### Demostración de los 14 bancos
+
+Después de levantar todos los servicios Docker, el flujo completo se ejecuta con:
+
+```bash
+bash scripts/run_all_demo.sh
+```
+
+Este script carga los 14 archivos de `data/seed`, levanta las 14 APIs, consulta
+BCB una sola vez y ejecuta ASFI con `ACTIVE_BANK_IDS=1,2,...,14`.
+
 ---
 *Desarrollado para la materia de Sistemas Distribuidos - Práctica 2.*
+
+## Estado actual del proyecto
+
+La demostración integrada está funcionando con una muestra local de 10 registros
+por banco. La última ejecución procesó 14 bancos, 142 transacciones, 142
+confirmaciones y 0 errores. Las dos transacciones adicionales provienen de
+registros de prueba conservados previamente en Banco 1.
+
+### Motores y distribución
+
+| Motor | Bancos |
+|---|---|
+| PostgreSQL | 1, 4 y 6 |
+| MySQL | 2, 5 y 7 |
+| SQLite | 3 |
+| MongoDB | 8, 9, 11, 12 y 14 |
+| Redis | 10 |
+| Neo4j | 13 |
+
+Neo4j debe contener `Cliente`, `Cuenta` y `TIENE_CUENTA`. Todos los servicios
+bancarios exponen el mismo contrato:
+
+```text
+GET  /api/banco/cuentas/cifradas?offset=0&limit=100
+POST /api/banco/cuentas/confirmar
+GET  /health
+```
+
+### Integración para compañeros
+
+Antes de cambiar código, cada integrante debe:
+
+1. Crear su rama de trabajo.
+2. Mantener el contrato HTTP anterior.
+3. Usar el adaptador de su motor y no modificar ASFI para un banco concreto.
+4. Probar carga, lectura cifrada y confirmación.
+5. Documentar comandos, variables de entorno y consultas.
+6. Ejecutar `bash scripts/run_all_demo.sh` antes de integrar cambios.
+
+### Tareas pendientes para la entrega final
+
+- Implementar la persistencia de consolidación de ASFI en `asfi-db` (PostgreSQL);
+  actualmente la auditoría principal se escribe en `data/audit.jsonl`.
+- Procesar la muestra oficial del 1% cuando se autorice, no solo la muestra
+  local de 10 registros por banco.
+- Limpiar o recrear las bases de demostración para obtener conteos reproducibles.
+- Preparar las 8 consultas SQL/NoSQL solicitadas para la defensa y guardarlas en
+  una carpeta `queries/` con datos de ejemplo.
+- Validar en Neo4j las consultas de clientes, cuentas y relaciones.
+- Añadir pruebas automatizadas permanentes para los 14 cifrados, adaptadores,
+  códigos hexadecimales y consistencia de una sola tasa BCB.
+- Revisar credenciales y rutas para que sean variables de entorno o archivos
+  locales, nunca secretos versionados.
+- Ejecutar una prueba final desde un entorno limpio y registrar el resultado.
+
+### Entrega esperada de cada integrante
+
+Cada contribución debe incluir:
+
+```text
+Código funcional
+Comando de ejecución
+Prueba de lectura cifrada
+Prueba de confirmación
+Consulta o evidencia de la base
+Actualización de BITACORA.md
+```

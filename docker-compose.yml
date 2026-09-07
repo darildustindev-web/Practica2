@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Base de Datos Central ASFI
   asfi-db:
@@ -10,7 +8,7 @@ services:
       POSTGRES_USER: asfi_user
       POSTGRES_PASSWORD: asfi_password
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - asfi_pgdata:/var/lib/postgresql/data
 
@@ -25,6 +23,28 @@ services:
     ports:
       - "5433:5432"
 
+  # Base de Datos Relacional Banco 4 (PostgreSQL)
+  bank4-bcp-db:
+    image: postgres:15-alpine
+    container_name: bank4-bcp-db
+    environment:
+      POSTGRES_DB: bank_bcp
+      POSTGRES_USER: bcp_user
+      POSTGRES_PASSWORD: bcp_password
+    ports:
+      - "5435:5432"
+
+  # Base de Datos Relacional Banco 6 (PostgreSQL)
+  bank6-ganadero-db:
+    image: postgres:15-alpine
+    container_name: bank6-ganadero-db
+    environment:
+      POSTGRES_DB: bank_ganadero
+      POSTGRES_USER: ganadero_user
+      POSTGRES_PASSWORD: ganadero_password
+    ports:
+      - "5436:5432"
+
   # Base de Datos Relacional Banco 2 (MySQL)
   bank2-mercantil-db:
     image: mysql:8.0
@@ -37,12 +57,43 @@ services:
     ports:
       - "3306:3306"
 
+  # Base de Datos Relacional Banco 5 (MySQL)
+  bank5-bisa-db:
+    image: mysql:8.0
+    container_name: bank5-bisa-db
+    environment:
+      MYSQL_DATABASE: bank_bisa
+      MYSQL_USER: bisa_user
+      MYSQL_PASSWORD: bisa_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3307:3306"
+
+  # Base de Datos Relacional Banco 7 (MySQL)
+  bank7-economico-db:
+    image: mysql:8.0
+    container_name: bank7-economico-db
+    environment:
+      MYSQL_DATABASE: bank_economico
+      MYSQL_USER: economico_user
+      MYSQL_PASSWORD: economico_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3308:3306"
+
   # Base de Datos NoSQL (MongoDB - Bancos Prodem, Sol, FIE, etc.)
   banks-nosql-db:
     image: mongo:6.0
     container_name: banks-nosql-db
     ports:
       - "27017:27017"
+
+  # Base NoSQL en memoria (Banco Fortaleza)
+  bank10-fortaleza-redis:
+    image: redis:7-alpine
+    container_name: bank10-fortaleza-redis
+    ports:
+      - "6379:6379"
 
   # Base de Datos de Grafos (Neo4j - Banco BDP)
   bank13-bdp-neo4j:
