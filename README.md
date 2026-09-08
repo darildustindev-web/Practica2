@@ -202,8 +202,13 @@ En VS Code selecciona `.venv/bin/python` como intérprete de Python.
 
 3. **Poblar las bases de datos con la muestra del 1%:**
    ```bash
-   .venv/bin/python scripts/seeder.py dataset.csv --output-dir data/seed
+   .venv/bin/python scripts/seeder.py data/dataset.csv --output-dir data/seed
    ```
+   El dataset oficial (`data/dataset.csv`, no versionado en git) ya está en
+   esta carpeta del proyecto. Filas inválidas se listan en
+   `data/seed/rejected_rows.csv` en vez de abortar el proceso; la consola
+   muestra cuántos registros se cargaron por banco frente a la cuota oficial
+   del 1% (ver BITACORA.md sobre por qué normalmente no van a coincidir).
 
 4. **Levantar el BCB:**
    ```bash
@@ -401,8 +406,18 @@ Antes de cambiar código, cada integrante debe:
 
 - Implementar la persistencia de consolidación de ASFI en `asfi-db` (PostgreSQL);
   actualmente la auditoría principal se escribe en `data/audit.jsonl`.
-- Procesar la muestra oficial del 1% cuando se autorice, no solo la muestra
-  local de 10 registros por banco.
+- ✅ Bancos 1–7: el seeder ya procesa el dataset oficial (`data/dataset.csv`,
+  123,790 filas reales) en vez de la muestra local de 10 registros, con
+  validación de filas inválidas. Pendiente para el equipo: el dataset
+  entregado no reparte las cuentas según la tabla de proporciones del
+  enunciado (trae ~8,700–8,900 filas por banco de forma pareja en vez de la
+  distribución 22,472/19,975/.../200); confirmar con el docente si hay que
+  usar el dataset completo de 12M o si esta muestra pareja es la oficial.
+  Ver BITACORA.md, sección "Actualización de Integrante 2".
+- Bancos 8–14: aplica lo mismo (procesar el dataset oficial), pero antes hay
+  que revisar el rendimiento del cifrado ElGamal (Banco 12): con miles de
+  registros reales tardó más de 2 minutos en un cifrado de prueba por el
+  exponente aleatorio de 2048 bits en cada operación.
 - Limpiar o recrear las bases de demostración para obtener conteos reproducibles.
 - Preparar las 8 consultas SQL/NoSQL solicitadas para la defensa y guardarlas en
   una carpeta `queries/` con datos de ejemplo.

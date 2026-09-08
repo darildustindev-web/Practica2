@@ -122,6 +122,32 @@ class VigenereCipher(BaseCipher):
 # 4. Banco de Crédito (BCP) - Cifrado Playfair
 # ==========================================
 class PlayfairCipher(BaseCipher):
+    """Playfair clasico (matriz 6x6 alfanumerica) con envoltura reversible.
+
+    Nota de Integrante 2 (BCP): la version original reconstruia el texto
+    contando posiciones entre el flujo cifrado (con relleno 'X' intercalado)
+    y el texto plano, lo que desalineaba los caracteres cuando habia digitos
+    repetidos (por ejemplo un SaldoUSD como "324443.5414" volvia como
+    "3244.435414": el punto decimal terminaba desplazado). Tambien perdia
+    las mayusculas/minusculas de Nombres/Apellidos porque la matriz solo
+    trabaja en mayusculas. Ambos problemas corrompian datos financieros y de
+    clientes reales, asi que se reescribio para separar de forma explicita:
+    (1) una plantilla que preserva cada caracter no alfanumerico en su
+    posicion original y marca donde va cada caracter cifrado, (2) una mascara
+    de mayusculas/minusculas, y (3) las posiciones exactas de relleno 'X'
+    insertadas por el algoritmo, para poder retirarlas sin ambiguedad al
+    descifrar. La fusion clasica I/J de Playfair se mantiene intacta: es una
+    propiedad conocida del algoritmo, no un error.
+    """
+
+    # Marcadores del Area de Uso Privado de Unicode (nunca aparecen en texto
+    # latino real) en vez de bytes de control: Postgres rechaza NUL (0x00)
+    # en columnas TEXT y algunos drivers/charsets maltratan otros bytes de
+    # control, asi que estos marcadores deben ser seguros para persistir tal
+    # cual en Postgres, MySQL y SQLite.
+    _SEP = "\uE001"
+    _SLOT = "\uE000"
+
     def _generate_matrix(self, key: str):
         key = (key or "PLAYFAIRKEY").upper().replace("J", "I")
         alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"  # Matriz 6x6 alfanumérica
@@ -133,27 +159,39 @@ class PlayfairCipher(BaseCipher):
         positions = {matrix[r][c]: (r, c) for r in range(6) for c in range(6)}
         return matrix, positions
 
+    def _split(self, text: str) -> tuple[str, str, str]:
+        """Separa el texto original en plantilla + mascara de mayusculas + payload."""
+        template_chars = []
+        case_bits = []
+        payload_chars = []
+        for ch in text:
+            if ch.isalnum():
+                template_chars.append(self._SLOT)
+                case_bits.append("0" if ch.islower() else "1")
+                normalized = ch.upper()
+                payload_chars.append("I" if normalized == "J" else normalized)
+            else:
+                template_chars.append(ch)
+        return "".join(template_chars), "".join(case_bits), "".join(payload_chars)
+
     def encrypt(self, plain_text: str, key="PLAYFAIRKEY") -> str:
         matrix, positions = self._generate_matrix(str(key))
-        cleaned = [ch.upper().replace("J", "I") if (ch.isalnum()) else ch for ch in str(plain_text)]
-        alnum_indices = [i for i, ch in enumerate(cleaned) if ch.isalnum()]
-        alnum_chars = [cleaned[i] for i in alnum_indices]
+        template, case_bits, payload = self._split(str(plain_text))
 
         digrams = []
+        pad_positions = []
         i = 0
-        while i < len(alnum_chars):
-            c1 = alnum_chars[i]
-            if i + 1 < len(alnum_chars):
-                c2 = alnum_chars[i+1]
-                if c1 == c2:
-                    digrams.append((c1, 'X'))
-                    i += 1
-                else:
-                    digrams.append((c1, c2))
-                    i += 2
+        out_index = 0
+        while i < len(payload):
+            c1 = payload[i]
+            if i + 1 < len(payload) and payload[i + 1] != c1:
+                digrams.append((c1, payload[i + 1]))
+                i += 2
             else:
                 digrams.append((c1, 'X'))
+                pad_positions.append(out_index + 1)
                 i += 1
+            out_index += 2
 
         enc_chars = []
         for c1, c2 in digrams:
@@ -165,27 +203,23 @@ class PlayfairCipher(BaseCipher):
                 enc_chars.extend([matrix[(r1 + 1) % 6][col1], matrix[(r2 + 1) % 6][col2]])
             else:
                 enc_chars.extend([matrix[r1][col2], matrix[r2][col1]])
-        encrypted = []
-        encoded_index = 0
-        for character in str(plain_text):
-            if character.isalnum():
-                encrypted.append(enc_chars[encoded_index])
-                encoded_index += 1
-            else:
-                encrypted.append(character)
-        encrypted.extend(enc_chars[encoded_index:])
-        return "".join(encrypted)
+
+        payload_cipher = "".join(enc_chars)
+        pad_csv = ",".join(str(p) for p in pad_positions)
+        return self._SEP.join([template, pad_csv, case_bits, payload_cipher])
 
     def decrypt(self, cipher_text: str, key="PLAYFAIRKEY") -> str:
         matrix, positions = self._generate_matrix(str(key))
-        cipher_value = str(cipher_text).upper()
-        cipher_clean = [ch for ch in cipher_value if ch in positions]
-        if len(cipher_clean) % 2 != 0:
-            cipher_clean.append('X')
+        parts = str(cipher_text).split(self._SEP)
+        if len(parts) != 4:
+            raise ValueError("Formato de cifrado Playfair no reconocido")
+        template, pad_csv, case_bits, payload_cipher = parts
+        pad_positions = {int(value) for value in pad_csv.split(",") if value != ""}
 
+        cipher_clean = [ch for ch in payload_cipher if ch in positions]
         dec_chars = []
         for i in range(0, len(cipher_clean), 2):
-            c1, c2 = cipher_clean[i], cipher_clean[i+1]
+            c1, c2 = cipher_clean[i], cipher_clean[i + 1]
             r1, col1 = positions[c1]
             r2, col2 = positions[c2]
             if r1 == r2:
@@ -194,36 +228,19 @@ class PlayfairCipher(BaseCipher):
                 dec_chars.extend([matrix[(r1 - 1) % 6][col1], matrix[(r2 - 1) % 6][col2]])
             else:
                 dec_chars.extend([matrix[r1][col2], matrix[r2][col1]])
-        decrypted = []
-        decoded_index = 0
-        for character in cipher_value:
-            if character in positions:
-                decrypted.append(dec_chars[decoded_index])
-                decoded_index += 1
+
+        real_chars = [ch for idx, ch in enumerate(dec_chars) if idx not in pad_positions]
+
+        result = []
+        cursor = 0
+        for ch in template:
+            if ch == self._SLOT:
+                real_ch = real_chars[cursor]
+                result.append(real_ch if case_bits[cursor] == "1" else real_ch.lower())
+                cursor += 1
             else:
-                decrypted.append(character)
-        decrypted.extend(dec_chars[decoded_index:])
-        formatted = "".join(decrypted)
-        cleaned = []
-        for index, character in enumerate(formatted):
-            previous = next(
-                (formatted[position] for position in range(index - 1, -1, -1)
-                 if formatted[position].isalnum()),
-                None,
-            )
-            following = next(
-                (formatted[position] for position in range(index + 1, len(formatted))
-                 if formatted[position].isalnum()),
-                None,
-            )
-            if (
-                character == "X"
-                and previous is not None
-                and previous == following
-            ):
-                continue
-            cleaned.append(character)
-        return "".join(cleaned).rstrip("X")
+                result.append(ch)
+        return "".join(result)
 
 
 # ==========================================
@@ -232,6 +249,14 @@ class PlayfairCipher(BaseCipher):
 class HillCipher(BaseCipher):
     CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789."
     MOD = len(CHARS)
+
+    # Marcadores del Area de Uso Privado de Unicode (nunca aparecen en texto
+    # latino real) en vez de bytes de control: Postgres rechaza NUL (0x00)
+    # en columnas TEXT y algunos drivers/charsets maltratan otros bytes de
+    # control, asi que estos marcadores deben ser seguros para persistir tal
+    # cual en Postgres, MySQL y SQLite.
+    _SEP = "\uE001"
+    _SLOT = "\uE000"
 
     def _get_matrix(self, key):
         if isinstance(key, list):
@@ -246,35 +271,76 @@ class HillCipher(BaseCipher):
             [(det_inv * -matrix[1][0]) % self.MOD, (det_inv * matrix[0][0]) % self.MOD],
         ]
 
+    def _split(self, text: str) -> tuple[str, str, str]:
+        """Separa el texto original en plantilla + mascara de mayusculas + payload.
+
+        Nota de Integrante 2 (BISA): la version original hacia
+        `.upper().replace(" ", "")` y luego descartaba cualquier caracter
+        fuera de A-Z/0-9/'.', por lo que un nombre como "Jorge Diego" perdia
+        el espacio para siempre ("JORGEDIEGO") y un NroCuenta con '+'
+        (notacion cientifica, p. ej. "3.96E+15") perdia el signo. Ahora los
+        caracteres fuera del alfabeto de Hill (espacios, '+', '-', etc.) se
+        preservan literalmente en la plantilla, y las mayusculas/minusculas
+        originales de las letras se restauran al descifrar.
+        """
+        template_chars = []
+        case_bits = []
+        payload_chars = []
+        for ch in text:
+            upper_ch = ch.upper()
+            if upper_ch in self.CHARS:
+                template_chars.append(self._SLOT)
+                case_bits.append("0" if ch.islower() else "1")
+                payload_chars.append(upper_ch)
+            else:
+                template_chars.append(ch)
+        return "".join(template_chars), "".join(case_bits), "".join(payload_chars)
+
     def encrypt(self, plain_text: str, key=None) -> str:
         matrix = self._get_matrix(key)
-        text = str(plain_text).upper().replace(" ", "")
-        valid_chars = [c for c in text if c in self.CHARS]
-        if len(valid_chars) % 2 != 0:
-            valid_chars.append('X')
+        template, case_bits, payload = self._split(str(plain_text))
 
-        indices = [self.CHARS.index(c) for c in valid_chars]
+        padded = len(payload) % 2 != 0
+        chars = payload + ("X" if padded else "")
+        indices = [self.CHARS.index(c) for c in chars]
         encrypted = []
         for i in range(0, len(indices), 2):
             first = (matrix[0][0] * indices[i] + matrix[0][1] * indices[i + 1]) % self.MOD
             second = (matrix[1][0] * indices[i] + matrix[1][1] * indices[i + 1]) % self.MOD
             encrypted.extend([self.CHARS[first], self.CHARS[second]])
-        return "".join(encrypted)
+
+        payload_cipher = "".join(encrypted)
+        return self._SEP.join([template, "1" if padded else "0", case_bits, payload_cipher])
 
     def decrypt(self, cipher_text: str, key=None) -> str:
         matrix = self._get_matrix(key)
         inv_matrix = self._mod_inverse_matrix(matrix)
-        valid_chars = [c for c in str(cipher_text).upper() if c in self.CHARS]
-        if len(valid_chars) % 2 != 0:
-            valid_chars.append('X')
+        parts = str(cipher_text).split(self._SEP)
+        if len(parts) != 4:
+            raise ValueError("Formato de cifrado Hill no reconocido")
+        template, padded_flag, case_bits, payload_cipher = parts
 
+        valid_chars = [c for c in payload_cipher if c in self.CHARS]
         indices = [self.CHARS.index(c) for c in valid_chars]
         decrypted = []
         for i in range(0, len(indices), 2):
             first = (inv_matrix[0][0] * indices[i] + inv_matrix[0][1] * indices[i + 1]) % self.MOD
             second = (inv_matrix[1][0] * indices[i] + inv_matrix[1][1] * indices[i + 1]) % self.MOD
             decrypted.extend([self.CHARS[first], self.CHARS[second]])
-        return "".join(decrypted).rstrip("X")
+
+        if padded_flag == "1" and decrypted:
+            decrypted = decrypted[:-1]
+
+        result = []
+        cursor = 0
+        for ch in template:
+            if ch == self._SLOT:
+                real_ch = decrypted[cursor]
+                result.append(real_ch if case_bits[cursor] == "1" else real_ch.lower())
+                cursor += 1
+            else:
+                result.append(ch)
+        return "".join(result)
 
 
 # ==========================================
