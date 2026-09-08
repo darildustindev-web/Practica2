@@ -65,7 +65,82 @@
 - **Flujo final:** Se agregó `scripts/run_all_demo.sh` para cargar los 14 bancos, levantar sus APIs y ejecutar un barrido ASFI completo con una única cotización.
 - **Hill:** Se corrigió el retiro del relleno `X` agregado por Hill en saldos de longitud impar; los 9 errores observados en la primera prueba completa correspondían únicamente al Banco 5.
 
+### [2026-09-08] - Tarea 2: Bases de Datos NoSQL (MongoDB & Redis) y APIs Bancos 8 al 14
+- **Persistencia Docker:**
+  - Configuración de volúmenes persistentes con nombre `banks_mongo_data` y `bank10_redis_data` en `docker-compose.yml`.
+  - Verificación operativa de los contenedores `banks-nosql-db` (mongo:6.0, puerto 27017) y `bank10-fortaleza-redis` (redis:7-alpine, puerto 6379).
+- **Adaptador MongoDB (`MongoStore`):**
+  - Aislamiento lógico por base de datos independiente (`bank_prodem`, `bank_solidario`, `bank_fortaleza`, `bank_fie`, `bank_pyme`, `bank_bdp`, `bank_argentina`).
+  - Creación automática de índices en MongoDB: índice único para `nro`, índice para `id_banco`, e índice para `codigo_verificacion`.
+  - Integración opcional de caché y tracking transaccional en Redis (`bank:{id}:*`) con fallback transparente ante desconexión.
+  - Validación estricta del código de verificación (hexadecimal de exactamente 8 caracteres).
+  - Soporte de reintento idempotente (200 OK con mismo código) y protección anti-replay / alteración (409 Conflict si se intenta reconfirmar con código diferente).
+- **Adaptador Redis (`RedisStore`):**
+  - Estandarización de namespaces aislados por banco: `bank:{bank_id}:cuenta:{account_ref}`, `bank:{bank_id}:cuentas:index` y `bank:{bank_id}:tx:{account_ref}`.
+  - Validación y actualización de esquema completo: `CuentaId`, `BancoId`, `SaldoUSD`, `SaldoBs`, `Estado`, `CodigoVerificacion`, `FechaConversion`.
+  - Validación estricta de 8 caracteres hex, idempotencia y anti-replay (409 Conflict).
+- **Enrutador y Plantilla Bancaria (`bank_router.py` y `bank_template/main.py`):**
+  - Compatibilidad dual de rutas: `/cuentas`, `/confirmar`, `/cuentas/{ref}` y las rutas compatibles con ASFI (`/api/banco/cuentas/cifradas`, `/api/banco/cuentas/confirmar`, `/api/banco/cuentas/{ref}`).
+  - Pydantic model `ConfirmationRequest` con soporte para aliases en español e inglés y validación regex `^[0-9A-Fa-f]{8}$`.
+  - Patrón Factory `create_app(...)` para evitar colisiones de caché singleton entre microservicios bancarios.
+  - Verificación de salud `/health` con ping real a MongoDB y Redis.
+- **Microservicios Bancarios Individuales (Bancos 8 al 14):**
+  - Banco 8: Banco Prodem S.A. -> Blowfish (puerto 8108)
+  - Banco 9: Banco Solidario S.A. -> Twofish (puerto 8109)
+  - Banco 10: Banco Fortaleza S.A. -> AES (puerto 8110, Redis primario)
+  - Banco 11: Banco FIE S.A. -> RSA (puerto 8111)
+  - Banco 12: Banco PYME de la Comunidad S.A. -> ElGamal (puerto 8112)
+  - Banco 13: Banco de Desarrollo Productivo S.A.M. -> ECC (puerto 8113)
+  - Banco 14: Banco de la Nación Argentina -> ChaCha20 (puerto 8114)
+  - Cada uno con su propio paquete y punto de entrada `main.py` (`banks-services/bank_08_prodem` a `bank_14_nacion_argentina`).
+- **Poblamiento NoSQL (`scripts/load_nosql_banks.py`):**
+  - Script automatizado que carga las cuentas cifradas desde `data/seed/bank_XX.jsonl` a las bases MongoDB y sincroniza con Redis.
+- **Suite de Pruebas Automatizadas (`tests/test_nosql_banks_8_14.py`):**
+  - 9 pruebas automatizadas pasando exitosamente (cifrado/descifrado de los 7 algoritmos, aislamiento NoSQL, índices MongoDB, namespaces Redis, endpoints `/cuentas` con paginación, consulta por ID, validaciones de código de 8 hex, ciclo de confirmación, idempotencia, anti-replay, y barrido simulado ASFI de 35 cuentas).
+- **Pruebas de Regresión:**
+  - Verificación de `tests/test_bcb_service.py` con 8/8 pruebas exitosas sin alterar el microservicio BCB.
+
+### [2026-09-08] - Tarea 3: BD Orientada a Grafos Neo4j (Banco BDP - Exclusivo 20 pts)
+- **Infraestructura Docker y Persistencia:**
+  - Configuración de volúmenes persistentes con nombre `bank13_neo4j_data` y `bank13_neo4j_logs` para el contenedor `bank13-bdp-neo4j` (imagen `neo4j:5.11`, puertos 7687 Bolt y 7474 HTTP) en `docker-compose.yml`.
+  - Configuración de variables de entorno y credenciales seguras en `.env.example` (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `BANK_13_STORAGE=neo4j`, `BANK_13_DATABASE_URL`).
+- **Modelo de Grafos en Neo4j:**
+  - Creación del modelo conceptual `(:Cliente)-[:TIENE_CUENTA]->(:Cuenta)`.
+  - Propiedades del nodo `(:Cliente)`: `clienteId`, `identificacion`, `nombres`, `apellidos`.
+  - Propiedades del nodo `(:Cuenta)`: `cuentaId`, `nro`, `bancoId` (13), `id_banco`, `saldoUSD`, `saldo`, `saldoBs`, `saldo_bs`, `estado`, `codigoVerificacion`, `codigo_verificacion`, `fechaConversion`, `convertido_at`, `tipoCambio`, `nroCuenta`, `nro_cuenta`.
+- **Restricciones e Índices (Neo4j 5.x):**
+  - Creación automática de restricción de unicidad para `Cliente.clienteId` (`cliente_id_unique`).
+  - Creación automática de restricción de unicidad para `Cuenta.cuentaId` (`cuenta_id_unique`).
+  - Creación de índices en `Cuenta.bancoId` y `Cuenta.codigoVerificacion`.
+- **Cifrado Asimétrico ECC:**
+  - Protección de datos sensibles (`Saldo`, `Identificacion`, `Nombres`, `Apellidos`, `NroCuenta`) cifrados con ECC (Curva Elíptica SECP256R1 con ECDH + HKDF SHA-256 + AES-128-CTR).
+  - Verificación de carga y aislamiento de claves privadas (`data/keys/bank_13_ecc.pem`).
+- **Adaptador de Persistencia (`Neo4jStore` en `banks-services/common/neo4j_store.py`):**
+  - Implementación completa de las 8 consultas Cypher parametrizadas requeridas:
+    - A. `get_all_clients`: todos los clientes ordenados por `clienteId`.
+    - B. `get_all_accounts`: todas las cuentas con paginación `offset` y `limit`.
+    - C. `get_accounts_by_client`: cuentas asociadas a un `clienteId`.
+    - D. `get_account_by_id`: búsqueda de cuenta por `cuentaId` o `nro`.
+    - E. `get_client_by_account`: cliente propietario de una cuenta.
+    - F. `get_graph_clients_and_accounts`: clientes y cuentas vinculados por `TIENE_CUENTA`.
+    - G. `get_pending_accounts`: cuentas en estado `PENDIENTE` para conversión.
+    - H. `confirm`: confirmación de conversión con validación de 8 caracteres hex, idempotencia y anti-replay (409 Conflict).
+  - Métodos auxiliares: `count_clients()`, `count_accounts()`, `count_relationships()`, `health_check()`, `close()`.
+- **Integración con API del Banco BDP:**
+  - Microservicio `banks-services/bank_13_bdp/main.py` configurado por defecto con `storage="neo4j"` en el puerto `8113`.
+  - Exposición de endpoints REST compatibles con ASFI y rutas específicas de grafo en `bank_router.py` y `bank_template/main.py`:
+    - `GET /cuentas`, `GET /cuentas/{account_ref}`, `POST /confirmar`, `GET /health`, `GET /info`.
+    - `GET /clientes`, `GET /clientes/{client_id}/cuentas`, `GET /cuentas/{account_ref}/cliente`, `GET /grafo`.
+- **Poblamiento e Idempotencia (`scripts/load_neo4j.py`):**
+  - Actualización del script con cláusulas `MERGE` (`ON CREATE` / `ON MATCH`) que evitan nodos o relaciones duplicadas ante múltiples ejecuciones consecutivas.
+- **Suite de Pruebas Automatizadas (`tests/test_bdp_neo4j.py`):**
+  - 6 pruebas integrales (restricciones e índices, modelo de grafos e idempotencia, cifrado/descifrado ECC, 8 consultas Cypher A a H, validaciones de API REST y ciclo de confirmación, y barrido simulado ASFI de 5 cuentas con 0 errores).
+- **Pruebas de Regresión:**
+  - `tests/test_bcb_service.py` (Tarea 1): 8/8 pruebas exitosas.
+  - `tests/test_nosql_banks_8_14.py` (Tarea 2): 9/9 pruebas exitosas.
+
 ### Estado de cierre de esta etapa
+
 
 La arquitectura distribuida está integrada en modo demostración. Se validó el
 flujo con los 14 bancos, 142 transacciones, 142 confirmaciones y 0 errores.
