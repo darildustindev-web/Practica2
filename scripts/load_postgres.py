@@ -20,11 +20,17 @@ def main() -> None:
 
     store = PostgreSQLStore(args.database_url)
     count = 0
+    batch = []
     with args.source.open(encoding="utf-8") as source:
         for line in source:
             if line.strip():
-                store.upsert_account(json.loads(line))
+                batch.append(json.loads(line))
                 count += 1
+                if len(batch) >= 1000:
+                    store.upsert_accounts_batch(batch)
+                    batch = []
+        if batch:
+            store.upsert_accounts_batch(batch)
     print(f"Registros cargados en PostgreSQL: {count}")
 
 

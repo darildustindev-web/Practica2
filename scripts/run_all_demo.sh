@@ -100,7 +100,7 @@ for endpoint in \
   done
 done
 
-curl --fail --silent --show-error -X POST \
+curl --fail --silent --show-error --max-time 300 -X POST \
   http://127.0.0.1:8000/api/asfi/ejecutar-conversion
 printf '\nBarrido de 14 bancos completado. Presiona Ctrl+C para detener servicios.\n'
 wait

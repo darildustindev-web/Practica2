@@ -69,54 +69,88 @@ async def process_bank(
     base_url: str,
     exchange_rate: Decimal,
 ) -> list[dict[str, object]]:
-    response = await client.get(f"{base_url}/cuentas/cifradas", params={"limit": 1000})
-    response.raise_for_status()
-    accounts = response.json().get("cuentas", [])
     cipher, key = CipherFactory.get_cipher_for_bank(bank_id)
-    if hasattr(key, "public_key") and cipher.__class__.__name__ == "ECCCipher":
-        key = key
-
     results = []
-    for account in accounts:
-        converted_at = datetime.now(timezone.utc)
-        verification_code = generate_verification_code()
-        try:
-            saldo_usd = parse_money(cipher.decrypt(account["Saldo"], key))
-            saldo_bs = (saldo_usd * exchange_rate).quantize(Decimal("0.0001"))
-            confirmation = await client.post(
-                f"{base_url}/cuentas/confirmar",
-                json={
-                    "account_ref": str(account["Nro"]),
-                    "verification_code": verification_code,
-                    "saldo_bs": format(saldo_bs, "f"),
-                    "exchange_rate": format(exchange_rate, "f"),
-                    "converted_at": converted_at.isoformat(),
-                },
-            )
-            confirmation.raise_for_status()
-            status = "CONFIRMADA"
-        except (InvalidOperation, KeyError, ValueError, httpx.HTTPError) as error:
-            saldo_usd = None
-            saldo_bs = None
-            status = f"ERROR: {error}"
+    offset = 0
+    limit = 1000
 
-        results.append(
-            {
-                "timestamp": converted_at.isoformat(),
-                "tipo_cambio": format(exchange_rate, "f"),
-                "cuenta_id": str(account.get("Nro", "")),
-                "banco_id": bank_id,
-                "codigo_verificacion": verification_code,
-                "saldo_usd": format(saldo_usd, "f") if saldo_usd is not None else None,
-                "saldo_bs": format(saldo_bs, "f") if saldo_bs is not None else None,
-                "estado": status,
-            }
+    while True:
+        response = await client.get(
+            f"{base_url}/cuentas/cifradas",
+            params={"offset": offset, "limit": limit},
         )
+        response.raise_for_status()
+        accounts = response.json().get("cuentas", [])
+        if not accounts:
+            break
+
+        confirmations_payload = []
+        parsed_accounts = []
+
+        for account in accounts:
+            converted_at = datetime.now(timezone.utc)
+            verification_code = generate_verification_code()
+            try:
+                saldo_usd = parse_money(cipher.decrypt(account["Saldo"], key))
+                saldo_bs = (saldo_usd * exchange_rate).quantize(Decimal("0.0001"))
+                confirmations_payload.append(
+                    {
+                        "account_ref": str(account["Nro"]),
+                        "verification_code": verification_code,
+                        "saldo_bs": format(saldo_bs, "f"),
+                        "exchange_rate": format(exchange_rate, "f"),
+                        "converted_at": converted_at.isoformat(),
+                    }
+                )
+                parsed_accounts.append(
+                    {
+                        "timestamp": converted_at.isoformat(),
+                        "tipo_cambio": format(exchange_rate, "f"),
+                        "cuenta_id": str(account.get("Nro", "")),
+                        "banco_id": bank_id,
+                        "codigo_verificacion": verification_code,
+                        "saldo_usd": format(saldo_usd, "f"),
+                        "saldo_bs": format(saldo_bs, "f"),
+                        "estado": "CONFIRMADA",
+                    }
+                )
+            except (InvalidOperation, KeyError, ValueError) as error:
+                parsed_accounts.append(
+                    {
+                        "timestamp": converted_at.isoformat(),
+                        "tipo_cambio": format(exchange_rate, "f"),
+                        "cuenta_id": str(account.get("Nro", "")),
+                        "banco_id": bank_id,
+                        "codigo_verificacion": verification_code,
+                        "saldo_usd": None,
+                        "saldo_bs": None,
+                        "estado": f"ERROR: {error}",
+                    }
+                )
+
+        if confirmations_payload:
+            try:
+                conf_response = await client.post(
+                    f"{base_url}/cuentas/confirmar",
+                    json=confirmations_payload,
+                )
+                conf_response.raise_for_status()
+            except httpx.HTTPError as error:
+                for item in parsed_accounts:
+                    if item["estado"] == "CONFIRMADA":
+                        item["estado"] = f"ERROR_CONFIRMACION: {error}"
+
+        results.extend(parsed_accounts)
+
+        if len(accounts) < limit:
+            break
+        offset += len(accounts)
+
     return results
 
 
 async def execute_conversion() -> list[dict[str, object]]:
-    timeout = httpx.Timeout(30.0)
+    timeout = httpx.Timeout(120.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         exchange_rate = await get_exchange_rate(client)
         jobs = [
