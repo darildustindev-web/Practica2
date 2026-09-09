@@ -1,0 +1,826 @@
+{
+  "dataset_sha256": "f0f3a15101b9226c24fff444ac802298d1d23e314be8589eb6bbd760848ff221",
+  "generacion": {
+    "ejecucion_id": "c0d127c7f6a14c36863939288260d899",
+    "inicio": "2026-09-09T20:43:41.149245+00:00",
+    "leidas": 123790,
+    "cifradas": 123785,
+    "rechazadas": 5,
+    "omitidas_cuota": 0,
+    "workers": 4,
+    "batch_size": 500,
+    "bancos": {
+      "1": 8721,
+      "2": 8830,
+      "3": 8767,
+      "4": 8885,
+      "5": 8785,
+      "6": 8793,
+      "7": 8872,
+      "8": 8877,
+      "9": 8817,
+      "10": 8779,
+      "11": 8910,
+      "12": 8982,
+      "13": 8902,
+      "14": 8865
+    },
+    "memoria_principal_max_mib": 70.85,
+    "segundos": 32.9918,
+    "registros_por_segundo": 3752.14
+  },
+  "carga": {
+    "segundos": 11.8494,
+    "bancos": [
+      {
+        "banco_id": 3,
+        "ejecucion_id": "632ea3e05b2442f783313f89b7f10944",
+        "inicio": "2026-09-09T20:44:32.080182+00:00",
+        "leidas": 8767,
+        "cargadas": 8767,
+        "rechazadas": 0,
+        "segundos": 0.6669,
+        "registros_por_segundo": 13145.9
+      },
+      {
+        "banco_id": 1,
+        "ejecucion_id": "844d3877d6bb40c89f515d3c3d7695b1",
+        "inicio": "2026-09-09T20:44:32.173958+00:00",
+        "leidas": 8721,
+        "cargadas": 8721,
+        "rechazadas": 0,
+        "segundos": 1.1812,
+        "registros_por_segundo": 7383.17
+      },
+      {
+        "banco_id": 2,
+        "ejecucion_id": "15c959a583d54c4ab000a3dd3c10e3ce",
+        "inicio": "2026-09-09T20:44:32.199150+00:00",
+        "leidas": 8830,
+        "cargadas": 8830,
+        "rechazadas": 0,
+        "segundos": 1.1699,
+        "registros_por_segundo": 7547.65
+      },
+      {
+        "banco_id": 4,
+        "ejecucion_id": "e1f4005dcf5d4beaa3d44fc276617605",
+        "inicio": "2026-09-09T20:44:32.147291+00:00",
+        "leidas": 8885,
+        "cargadas": 8885,
+        "rechazadas": 0,
+        "segundos": 1.4611,
+        "registros_por_segundo": 6081.03
+      },
+      {
+        "banco_id": 5,
+        "ejecucion_id": "bd2d995256f044dfa182787f1c29b674",
+        "inicio": "2026-09-09T20:44:32.889672+00:00",
+        "leidas": 8785,
+        "cargadas": 8785,
+        "rechazadas": 0,
+        "segundos": 1.499,
+        "registros_por_segundo": 5860.57
+      },
+      {
+        "banco_id": 7,
+        "ejecucion_id": "c039a5dc523841589274bc407ba99018",
+        "inicio": "2026-09-09T20:44:33.609499+00:00",
+        "leidas": 8872,
+        "cargadas": 8872,
+        "rechazadas": 0,
+        "segundos": 1.1492,
+        "registros_por_segundo": 7720.15
+      },
+      {
+        "banco_id": 6,
+        "ejecucion_id": "dbcbc865cf2d41dfa01c79882f39f99f",
+        "inicio": "2026-09-09T20:44:33.444077+00:00",
+        "leidas": 8793,
+        "cargadas": 8793,
+        "rechazadas": 0,
+        "segundos": 1.3158,
+        "registros_por_segundo": 6682.63
+      },
+      {
+        "banco_id": 8,
+        "ejecucion_id": "fe4db2b30a234e4c8193ac1f877cc813",
+        "inicio": "2026-09-09T20:44:33.849831+00:00",
+        "leidas": 8877,
+        "cargadas": 8877,
+        "rechazadas": 0,
+        "segundos": 1.5677,
+        "registros_por_segundo": 5662.44
+      },
+      {
+        "banco_id": 9,
+        "ejecucion_id": "fb221cd5e54748d18ace36491607179a",
+        "inicio": "2026-09-09T20:44:34.491592+00:00",
+        "leidas": 8817,
+        "cargadas": 8817,
+        "rechazadas": 0,
+        "segundos": 1.6323,
+        "registros_por_segundo": 5401.58
+      },
+      {
+        "banco_id": 10,
+        "ejecucion_id": "2218573190e140868e8896c1064ea486",
+        "inicio": "2026-09-09T20:44:34.767645+00:00",
+        "leidas": 8779,
+        "cargadas": 8779,
+        "rechazadas": 0,
+        "segundos": 1.3898,
+        "registros_por_segundo": 6316.74
+      },
+      {
+        "banco_id": 11,
+        "ejecucion_id": "9858721e7b434439aa5f6433c5061034",
+        "inicio": "2026-09-09T20:44:34.825505+00:00",
+        "leidas": 8910,
+        "cargadas": 8910,
+        "rechazadas": 0,
+        "segundos": 1.6303,
+        "registros_por_segundo": 5465.25
+      },
+      {
+        "banco_id": 14,
+        "ejecucion_id": "dcbd18a8cf9a49b78e15edeef715ddc8",
+        "inicio": "2026-09-09T20:44:36.226297+00:00",
+        "leidas": 8865,
+        "cargadas": 8865,
+        "rechazadas": 0,
+        "segundos": 1.3089,
+        "registros_por_segundo": 6772.86
+      },
+      {
+        "banco_id": 12,
+        "ejecucion_id": "3a79495ae5ba4a1f9636764cdc2fbccd",
+        "inicio": "2026-09-09T20:44:35.572211+00:00",
+        "leidas": 8982,
+        "cargadas": 8982,
+        "rechazadas": 0,
+        "segundos": 2.3113,
+        "registros_por_segundo": 3886.12
+      },
+      {
+        "banco_id": 13,
+        "ejecucion_id": "94840d3348fd45cc82469fb486fd3364",
+        "inicio": "2026-09-09T20:44:37.887009+00:00",
+        "leidas": 8902,
+        "cargadas": 8902,
+        "rechazadas": 0,
+        "segundos": 6.0316,
+        "registros_por_segundo": 1475.89
+      }
+    ]
+  },
+  "barridos": [
+    {
+      "status": "PROCESADO",
+      "transacciones": 123785,
+      "confirmadas": 123785,
+      "ya_confirmadas": 0,
+      "errores": 0,
+      "segundos": 66.1058,
+      "bancos": [
+        {
+          "banco_id": 1,
+          "leidas": 8721,
+          "confirmadas": 8721,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.0956,
+          "segundos": 62.0957,
+          "registros_por_segundo": 140.44
+        },
+        {
+          "banco_id": 2,
+          "leidas": 8830,
+          "confirmadas": 8830,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.8828,
+          "segundos": 63.1538,
+          "registros_por_segundo": 139.82
+        },
+        {
+          "banco_id": 3,
+          "leidas": 8767,
+          "confirmadas": 8767,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.1323,
+          "segundos": 52.0801,
+          "registros_por_segundo": 168.34
+        },
+        {
+          "banco_id": 4,
+          "leidas": 8885,
+          "confirmadas": 8885,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.1805,
+          "segundos": 62.1354,
+          "registros_por_segundo": 142.99
+        },
+        {
+          "banco_id": 5,
+          "leidas": 8785,
+          "confirmadas": 8785,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.9279,
+          "segundos": 63.2968,
+          "registros_por_segundo": 138.79
+        },
+        {
+          "banco_id": 6,
+          "leidas": 8793,
+          "confirmadas": 8793,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.0903,
+          "segundos": 62.1038,
+          "registros_por_segundo": 141.59
+        },
+        {
+          "banco_id": 7,
+          "leidas": 8872,
+          "confirmadas": 8872,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.998,
+          "segundos": 63.3794,
+          "registros_por_segundo": 139.98
+        },
+        {
+          "banco_id": 8,
+          "leidas": 8877,
+          "confirmadas": 8877,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.2199,
+          "segundos": 62.0397,
+          "registros_por_segundo": 143.09
+        },
+        {
+          "banco_id": 9,
+          "leidas": 8817,
+          "confirmadas": 8817,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.1852,
+          "segundos": 62.0682,
+          "registros_por_segundo": 142.05
+        },
+        {
+          "banco_id": 10,
+          "leidas": 8779,
+          "confirmadas": 8779,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.155,
+          "segundos": 55.5132,
+          "registros_por_segundo": 158.14
+        },
+        {
+          "banco_id": 11,
+          "leidas": 8910,
+          "confirmadas": 8910,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.6488,
+          "segundos": 64.7039,
+          "registros_por_segundo": 137.7
+        },
+        {
+          "banco_id": 12,
+          "leidas": 8982,
+          "confirmadas": 8982,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.6224,
+          "segundos": 65.7469,
+          "registros_por_segundo": 136.61
+        },
+        {
+          "banco_id": 13,
+          "leidas": 8902,
+          "confirmadas": 8902,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.7423,
+          "segundos": 65.969,
+          "registros_por_segundo": 134.94
+        },
+        {
+          "banco_id": 14,
+          "leidas": 8865,
+          "confirmadas": 8865,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.1269,
+          "segundos": 58.6601,
+          "registros_por_segundo": 151.12
+        }
+      ],
+      "barrido_id": "79b3e8aaaf9d4642947d3e2dd940ed5c"
+    },
+    {
+      "status": "PROCESADO",
+      "transacciones": 123785,
+      "confirmadas": 123785,
+      "ya_confirmadas": 0,
+      "errores": 0,
+      "segundos": 67.7975,
+      "bancos": [
+        {
+          "banco_id": 1,
+          "leidas": 8721,
+          "confirmadas": 8721,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.2623,
+          "segundos": 60.2602,
+          "registros_por_segundo": 144.72
+        },
+        {
+          "banco_id": 2,
+          "leidas": 8830,
+          "confirmadas": 8830,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.2835,
+          "segundos": 65.1522,
+          "registros_por_segundo": 135.53
+        },
+        {
+          "banco_id": 3,
+          "leidas": 8767,
+          "confirmadas": 8767,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.108,
+          "segundos": 52.9922,
+          "registros_por_segundo": 165.44
+        },
+        {
+          "banco_id": 4,
+          "leidas": 8885,
+          "confirmadas": 8885,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.3394,
+          "segundos": 65.1261,
+          "registros_por_segundo": 136.43
+        },
+        {
+          "banco_id": 5,
+          "leidas": 8785,
+          "confirmadas": 8785,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.2444,
+          "segundos": 65.1756,
+          "registros_por_segundo": 134.79
+        },
+        {
+          "banco_id": 6,
+          "leidas": 8793,
+          "confirmadas": 8793,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.286,
+          "segundos": 63.6459,
+          "registros_por_segundo": 138.16
+        },
+        {
+          "banco_id": 7,
+          "leidas": 8872,
+          "confirmadas": 8872,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.268,
+          "segundos": 65.164,
+          "registros_por_segundo": 136.15
+        },
+        {
+          "banco_id": 8,
+          "leidas": 8877,
+          "confirmadas": 8877,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.2939,
+          "segundos": 61.6807,
+          "registros_por_segundo": 143.92
+        },
+        {
+          "banco_id": 9,
+          "leidas": 8817,
+          "confirmadas": 8817,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.3155,
+          "segundos": 63.5983,
+          "registros_por_segundo": 138.64
+        },
+        {
+          "banco_id": 10,
+          "leidas": 8779,
+          "confirmadas": 8779,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.4568,
+          "segundos": 56.9162,
+          "registros_por_segundo": 154.24
+        },
+        {
+          "banco_id": 11,
+          "leidas": 8910,
+          "confirmadas": 8910,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.9434,
+          "segundos": 66.5702,
+          "registros_por_segundo": 133.84
+        },
+        {
+          "banco_id": 12,
+          "leidas": 8982,
+          "confirmadas": 8982,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.7387,
+          "segundos": 67.6894,
+          "registros_por_segundo": 132.69
+        },
+        {
+          "banco_id": 13,
+          "leidas": 8902,
+          "confirmadas": 8902,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 2.8542,
+          "segundos": 66.6155,
+          "registros_por_segundo": 133.63
+        },
+        {
+          "banco_id": 14,
+          "leidas": 8865,
+          "confirmadas": 8865,
+          "ya_confirmadas": 0,
+          "errores": 0,
+          "lotes": 18,
+          "ultimo_lote_segundos": 3.4678,
+          "segundos": 60.1899,
+          "registros_por_segundo": 147.28
+        }
+      ],
+      "barrido_id": "facb7d0b6610478e9e6869c9c5c4c857"
+    }
+  ],
+  "verificaciones": [
+    {
+      "fecha_utc": "2026-09-09T20:47:30.399645+00:00",
+      "segundos": 4.731,
+      "coincide": true,
+      "total_comparadas": 123785,
+      "bancos": [
+        {
+          "banco_id": 1,
+          "esperadas": 8721,
+          "banco": 8721,
+          "asfi": 8721,
+          "comparadas": 8721,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "ecd2e1a235acd74ae4e9f1e64a72702142915c2ec54d4c45f3cb29f20a1c234d"
+        },
+        {
+          "banco_id": 2,
+          "esperadas": 8830,
+          "banco": 8830,
+          "asfi": 8830,
+          "comparadas": 8830,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "80dea5b4c6eb241910c98a6fe55c98084906109f15f36846192d4bec1b5806cb"
+        },
+        {
+          "banco_id": 3,
+          "esperadas": 8767,
+          "banco": 8767,
+          "asfi": 8767,
+          "comparadas": 8767,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "ee84d888daf2cfb269d97a72bbb928110b7ea19df8cb04bfb2538f8d7f971490"
+        },
+        {
+          "banco_id": 4,
+          "esperadas": 8885,
+          "banco": 8885,
+          "asfi": 8885,
+          "comparadas": 8885,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "f0b00681529b1a900eded48fdd14b8a201654121cdc69509144a9904bdb81c33"
+        },
+        {
+          "banco_id": 5,
+          "esperadas": 8785,
+          "banco": 8785,
+          "asfi": 8785,
+          "comparadas": 8785,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "f72fadf78fa9eed871f31dd5fa1c1a712b49a04cd182fd45fafe06b3c2dc558b"
+        },
+        {
+          "banco_id": 6,
+          "esperadas": 8793,
+          "banco": 8793,
+          "asfi": 8793,
+          "comparadas": 8793,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "95121e4e37e954e9864ac74b2acc2053d5d0bb206fa29cf309b15ddf56131e9c"
+        },
+        {
+          "banco_id": 7,
+          "esperadas": 8872,
+          "banco": 8872,
+          "asfi": 8872,
+          "comparadas": 8872,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "a7285c3e037cfb157e298e91fa47111ec02bbf6fe26f727312b22bbf1c2999b1"
+        },
+        {
+          "banco_id": 8,
+          "esperadas": 8877,
+          "banco": 8877,
+          "asfi": 8877,
+          "comparadas": 8877,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "1e98fc7f71142c24693eebf819e45cc32b0416af90a792b6e13d251042b81d41"
+        },
+        {
+          "banco_id": 9,
+          "esperadas": 8817,
+          "banco": 8817,
+          "asfi": 8817,
+          "comparadas": 8817,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "5aeed2a43db0286c4c494dd47f26fdc4cd4dbb5ae4088c2a49f92b90030af10a"
+        },
+        {
+          "banco_id": 10,
+          "esperadas": 8779,
+          "banco": 8779,
+          "asfi": 8779,
+          "comparadas": 8779,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "0d3abc3904e7344e8e21065ed2033971d25a5f087241cfade7b0e4ad134758f1"
+        },
+        {
+          "banco_id": 11,
+          "esperadas": 8910,
+          "banco": 8910,
+          "asfi": 8910,
+          "comparadas": 8910,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "85b939530707f34527c19ec5c11b2073a7d700876acc0685d5aaec5306c56236"
+        },
+        {
+          "banco_id": 12,
+          "esperadas": 8982,
+          "banco": 8982,
+          "asfi": 8982,
+          "comparadas": 8982,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "00762fa9810ebd84348cb4a0050d21ce983369fd79285c497c5c10a4fab530ca"
+        },
+        {
+          "banco_id": 13,
+          "esperadas": 8902,
+          "banco": 8902,
+          "asfi": 8902,
+          "comparadas": 8902,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "d2ce8cee31ff9c9a45871fba1c7e2c575fed821c4875fc597296fc43154c9fe7"
+        },
+        {
+          "banco_id": 14,
+          "esperadas": 8865,
+          "banco": 8865,
+          "asfi": 8865,
+          "comparadas": 8865,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "1a439186f7886404ab2cd06e8dea7a5a8bde3e92af9e8a5e089b575ffb042a21"
+        }
+      ]
+    },
+    {
+      "fecha_utc": "2026-09-09T20:48:44.582167+00:00",
+      "segundos": 4.409,
+      "coincide": true,
+      "total_comparadas": 123785,
+      "bancos": [
+        {
+          "banco_id": 1,
+          "esperadas": 8721,
+          "banco": 8721,
+          "asfi": 8721,
+          "comparadas": 8721,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "951306bfd82ed15aaac538845ea17d5b2893521335989659df0430076e098c85"
+        },
+        {
+          "banco_id": 2,
+          "esperadas": 8830,
+          "banco": 8830,
+          "asfi": 8830,
+          "comparadas": 8830,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "bb558bcc642c6ba1431638a0b1491485863734b138da620d92bea31931222bc6"
+        },
+        {
+          "banco_id": 3,
+          "esperadas": 8767,
+          "banco": 8767,
+          "asfi": 8767,
+          "comparadas": 8767,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "62196d69db4ca25e8eba5b6fcc4091cb12a53ddf5ad2c4eab69f621879b8e001"
+        },
+        {
+          "banco_id": 4,
+          "esperadas": 8885,
+          "banco": 8885,
+          "asfi": 8885,
+          "comparadas": 8885,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "b12b1e6ced023a1a321affa588777d16e066d4c905e739cad0172be506e3af08"
+        },
+        {
+          "banco_id": 5,
+          "esperadas": 8785,
+          "banco": 8785,
+          "asfi": 8785,
+          "comparadas": 8785,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "a9aef83865d58373f24489ada4647edb7f071e8e6b1e9c3e10a8fe889916cc64"
+        },
+        {
+          "banco_id": 6,
+          "esperadas": 8793,
+          "banco": 8793,
+          "asfi": 8793,
+          "comparadas": 8793,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "a00dde6747b08991faa13a7eb1a5fa3e50d2c9e86cb050ff56d0bb27e2d31892"
+        },
+        {
+          "banco_id": 7,
+          "esperadas": 8872,
+          "banco": 8872,
+          "asfi": 8872,
+          "comparadas": 8872,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "aa5c1e6dc9bb7090344351ad7d2abb6d98c662d356ebd638a624b363fd743e7f"
+        },
+        {
+          "banco_id": 8,
+          "esperadas": 8877,
+          "banco": 8877,
+          "asfi": 8877,
+          "comparadas": 8877,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "71eadb657c3ba8b1d8d0a8d4e20e621b615a2d556ae1b880a05efd051d504d6f"
+        },
+        {
+          "banco_id": 9,
+          "esperadas": 8817,
+          "banco": 8817,
+          "asfi": 8817,
+          "comparadas": 8817,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "b4d7d18d9d28d1e6a194d17986c33a7b9dadff4d701e3b9b2143f3488cead0d8"
+        },
+        {
+          "banco_id": 10,
+          "esperadas": 8779,
+          "banco": 8779,
+          "asfi": 8779,
+          "comparadas": 8779,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "1615c8785985d1a9ef55049605dff60dec2852a5588a397ebbf2bdfab1880a40"
+        },
+        {
+          "banco_id": 11,
+          "esperadas": 8910,
+          "banco": 8910,
+          "asfi": 8910,
+          "comparadas": 8910,
+          "errores": {},
+          "tasas_distintas": 17,
+          "huella_codigos": "f522e9271e22dcf52559dcdb474cef0efa2acdfb183b4ac36ea9f5818d893a54"
+        },
+        {
+          "banco_id": 12,
+          "esperadas": 8982,
+          "banco": 8982,
+          "asfi": 8982,
+          "comparadas": 8982,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "16ab41b928cc0ec30b7c2bbd5ca57b66b70ec8ceff62cd3465bcedc479e9a66a"
+        },
+        {
+          "banco_id": 13,
+          "esperadas": 8902,
+          "banco": 8902,
+          "asfi": 8902,
+          "comparadas": 8902,
+          "errores": {},
+          "tasas_distintas": 17,
+          "huella_codigos": "2ae4c31ff0ef8766fd18e112295203c20dc9eae1a67cfc923b9c3588f85a394c"
+        },
+        {
+          "banco_id": 14,
+          "esperadas": 8865,
+          "banco": 8865,
+          "asfi": 8865,
+          "comparadas": 8865,
+          "errores": {},
+          "tasas_distintas": 18,
+          "huella_codigos": "772c5dfc71a3835776c315d9c628c84de8a683d6a98cd003b7162d109cb3da38"
+        }
+      ]
+    }
+  ],
+  "recotizacion": {
+    "cuentas": 123785,
+    "codigos_nuevos": 123785,
+    "tasas_nuevas": 123785,
+    "saldos_nuevos": 123783,
+    "historial": 123785
+  },
+  "cuentas_saldo_cero": 2,
+  "auditoria": {
+    "eventos": {
+      "INICIO_BARRIDO": 2,
+      "CUENTA": 247570,
+      "FIN_BARRIDO": 2
+    },
+    "sin_fecha_o_id": 0,
+    "cifrado_banco_9": {
+      "TWOFISH_TF1": 17634
+    }
+  }
+}

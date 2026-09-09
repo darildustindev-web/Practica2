@@ -14,3 +14,7 @@ data/*.sqlite
 *.sqlite-shm
 *.load-rejected.jsonl
 data/service-logs/
+
+# Resultados locales de nuevas demostraciones
+data/seed-*/
+data/evidencias/

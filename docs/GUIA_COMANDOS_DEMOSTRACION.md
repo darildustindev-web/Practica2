@@ -1,5 +1,25 @@
 # Guía de demostración en terminal: bancos, ASFI y errores
 
+## Ruta rápida: bases ya cargadas
+
+Si la prueba final ya terminó, **no volver a ejecutar el seeder ni el cargador** para hacer consultas. En la máquina de esta demostración el dataset completo está preparado en `data/seed`.
+
+```bash
+cd /home/daril/ProyectosDistribuidos/Practica2
+docker compose up -d
+.venv/bin/python scripts/run_panel.py
+```
+
+Mantener esa terminal abierta. Si el lanzador indica «ya disponible», está reutilizando servicios existentes. En otra terminal:
+
+```bash
+cd /home/daril/ProyectosDistribuidos/Practica2
+curl -fsS http://127.0.0.1:8200/api/panel/servicios | .venv/bin/python -m json.tool
+.venv/bin/python scripts/demo_terminal.py estado
+```
+
+Luego seguir los apartados 4–10 para consultar cada motor y comprobar ASFI. El apartado «Preparar desde cero con el dataset del docente» está al final: usarlo únicamente cuando corresponda cargar datos nuevos.
+
 ## 1. Preparación y qué demuestra el sistema
 
 Todos los comandos de esta guía se ejecutan desde:
@@ -293,7 +313,7 @@ PYCODE
 
 `asfi_cuentas` guarda una fila vigente por banco y referencia, con saldo USD, Bs, tasa, código y estado. El JSON `payload` contiene `datos` con los campos descifrados del cliente/cuenta. `asfi_historial` guarda versiones anteriores al recotizar las confirmadas. Es una consolidación lógica; no es una clonación literal de las tablas de seis motores diferentes.
 
-En la revisión de esta guía, ASFI tenía 123.786 filas vigentes y los bancos 123.785 cuentas del dataset actual. ASFI puede conservar referencias de pruebas anteriores: no se eliminan al cargar otro conjunto. Por eso el total global por sí solo no demuestra consistencia; comparar por banco y referencia. Para una prueba desde cero, preparar conjuntamente las bases bancarias y ASFI.
+ASFI puede conservar referencias de pruebas anteriores si se mezclan datasets; la carga incremental no las elimina. La prueba final documentada se hizo desde bases nuevas y compara todas las referencias, no solo el total global. Ver `RESULTADO_PRUEBA_FINAL.md` para los resultados medidos.
 
 Comparación directa y recomendada para la exposición, usando las variables del apartado 4:
 
@@ -365,10 +385,10 @@ El tiempo total es de pared; no sumar los tiempos de todos los bancos, porque tr
 
 | Archivo | Qué permite demostrar | Identificación / causa |
 |---|---|---|
-| `data/seed-terminal/rejected_rows.csv` | Filas rechazadas antes del cifrado | `linea`, `Nro`, `IdBanco`, `motivo` |
-| `data/seed-terminal/bank_XX.load-rejected.jsonl` | Rechazos de la carga de cada archivo | `linea`, `motivo`; banco indicado por el archivo |
-| `data/seed-terminal/metrics.json` | Lecturas, cifradas, rechazadas, tiempos, workers y distribución | Resumen de generación |
-| `data/seed-terminal/load-metrics.json` | Resultados por banco de la última invocación de carga | No necesariamente incluye los 14 si se cargó un subconjunto |
+| `data/seed/rejected_rows.csv` | Filas rechazadas antes del cifrado | `linea`, `Nro`, `IdBanco`, `motivo` |
+| `data/seed/bank_XX.load-rejected.jsonl` | Rechazos de la carga de cada archivo | `linea`, `motivo`; banco indicado por el archivo |
+| `data/seed/metrics.json` | Lecturas, cifradas, rechazadas, tiempos, workers y distribución | Resumen de generación |
+| `data/seed/load-metrics.json` | Resultados por banco de la última invocación de carga | No necesariamente incluye los 14 si se cargó un subconjunto |
 | `data/audit.jsonl` | Confirmaciones, pendientes y errores durante el barrido | Banco, referencia, estado y `detail` cuando hay fallo |
 | `data/service-logs/bank_XX.log` | Salida y errores de cada API bancaria | Solicitudes HTTP y posibles trazas del servidor |
 | `data/service-logs/asfi.log` / `bcb.log` | Salida de los servicios centrales | Conexiones, arranque y errores del proceso |
@@ -378,15 +398,15 @@ Los archivos de servicio se generan cuando `run_panel.py` inicia ese proceso; si
 Ver los rechazos reales del dataset actual:
 
 ```bash
-cat data/seed-terminal/rejected_rows.csv
-cat data/seed-terminal/metrics.json
-cat data/seed-terminal/load-metrics.json
+cat data/seed/rejected_rows.csv
+cat data/seed/metrics.json
+cat data/seed/load-metrics.json
 ```
 
 Ver fallos de carga de un banco; un archivo vacío significa que esa carga no registró rechazos:
 
 ```bash
-cat data/seed-terminal/bank_04.load-rejected.jsonl
+cat data/seed/bank_04.load-rejected.jsonl
 ```
 
 Ver errores acumulados del barrido o filtrar bancos:
@@ -456,7 +476,7 @@ Después de una demostración, usar un directorio nuevo:
 ```bash
 EVIDENCIA="data/evidencias/demo-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$EVIDENCIA"
-cp data/seed-terminal/rejected_rows.csv data/seed-terminal/metrics.json data/seed-terminal/load-metrics.json "$EVIDENCIA/"
+cp data/seed/rejected_rows.csv data/seed/metrics.json data/seed/load-metrics.json "$EVIDENCIA/"
 .venv/bin/python scripts/demo_terminal.py estado > "$EVIDENCIA/ultimo-barrido.txt"
 .venv/bin/python scripts/demo_terminal.py verificar "$BANCO" "$CUENTA" > "$EVIDENCIA/comparacion.txt"
 .venv/bin/python scripts/export_asfi_audit.py --output "$EVIDENCIA/consolidacion-actual.jsonl"
@@ -498,3 +518,107 @@ La carga es incremental: preserva las referencias ya existentes, **no reemplaza 
 7. Mostrar la misma referencia en ASFI y ejecutar `verificar`: debe indicar `COINCIDE`.
 8. Repetir el barrido y verificar nuevamente la misma cuenta para demostrar recotización.
 9. Mostrar auditoría y guardar las evidencias.
+
+
+## 17. Preparar desde cero con el dataset del docente
+
+Este procedimiento presupone bases de bancos y ASFI vacías de la misma práctica. No incluye comandos de borrado: no mezclar una nueva fuente con cuentas antiguas de igual `Nro`.
+
+1. Guardar el CSV como `data/dataset-docente.csv`. La cabecera esperada es `Nro,Identificacion,Nombres,Apellidos,NroCuenta,IdBanco,Saldo`. Saldo corresponde a USD e IdBanco va de 1 a 14. Si cambia la estructura, adaptar el mapeo antes de cargar.
+2. Preparar archivos y revisar los rechazos:
+
+```bash
+.venv/bin/python scripts/seeder.py data/dataset-docente.csv --output-dir data/seed-docente --workers 4
+cat data/seed-docente/metrics.json
+cat data/seed-docente/rejected_rows.csv
+```
+
+3. Iniciar bases y esperar a que acepten conexiones. Luego cargar:
+
+```bash
+docker compose up -d
+docker compose ps
+.venv/bin/python scripts/load_all.py --source-dir data/seed-docente --workers 4
+cat data/seed-docente/load-metrics.json
+```
+
+Un contenedor «Up» puede seguir inicializando su base. Si la carga reporta conexión rechazada, esperar y reintentar; las inserciones son incrementales. No continuar a la demostración si algún banco que debería tener datos quedó sin cargar.
+
+4. Iniciar APIs con `scripts/run_panel.py`, mantener la terminal abierta y consultar `/api/panel/servicios` en otra terminal.
+5. Modificar BCB a un segundo, ejecutar un barrido, verificar una cuenta y ejecutar el segundo barrido. Los comandos están en el apartado 11.
+6. Consultar todas las cuentas con el verificador del siguiente apartado, usando `--source-dir data/seed-docente`.
+
+## 18. Verificación completa: todas las cuentas, seis motores
+
+El siguiente comando **solo lee** las bases y escribe el informe si se especifica `--output`. Ejecutarlo cuando no haya barridos ni cargas en curso, para que los valores no cambien durante la comparación.
+
+Para el dataset grande preparado en la prueba final:
+
+```bash
+.venv/bin/python scripts/verificar_consolidacion.py --source-dir data/seed --output data/evidencias/verificacion-manual.json
+```
+
+Para el dataset del docente:
+
+```bash
+.venv/bin/python scripts/verificar_consolidacion.py --source-dir data/seed-docente --output data/evidencias/verificacion-docente.json
+```
+
+Comprueba referencias presentes/faltantes/adicionales, importe Bs, tasa, código hexadecimal, fórmula USD × tasa y estado confirmado en ASFI. Muestra resultados por banco y finaliza con COINCIDE si no detecta diferencias. No reemplaza las verificaciones de descifrado realizadas durante el barrido.
+
+Usa las conexiones locales predeterminadas del cargador. Si se configuraron otras, conservar `BANK_XX_DATABASE_URL` y `ASFI_DATABASE_URL`, o pasar `--asfi-url`. El informe no incluye nombres ni saldos individuales; contiene contadores y huellas de códigos. Para mostrar una cuenta concreta usar `demo_terminal.py verificar`.
+
+## 19. Entrar y mostrar la base de grafos con más detalle
+
+Neo4j corresponde al Banco 13. Su contenedor es `bank13-bdp-neo4j`.
+
+```bash
+docker exec -it bank13-bdp-neo4j cypher-shell -u neo4j
+```
+
+Ingresar la contraseña local `bdp_password`, salvo que se haya cambiado `NEO4J_AUTH`.
+
+Dentro de la consola, ejecutar cada consulta completa, con punto y coma:
+
+```cypher
+MATCH (c:Cliente) RETURN count(c) AS clientes;
+MATCH (c:Cuenta) RETURN count(c) AS cuentas;
+MATCH ()-[r]->() RETURN type(r) AS relacion, count(*) AS cantidad;
+MATCH (cl:Cliente)-[r]->(cu:Cuenta)
+RETURN cl.clienteId AS cliente, type(r) AS relacion,
+       cu.cuentaId AS cuenta, cu.saldo_bs AS bolivianos,
+       cu.tipo_cambio AS tasa, cu.codigo_verificacion AS codigo
+LIMIT 5;
+```
+
+Escoger una de las referencias `cuenta` devueltas y sustituir REFERENCIA:
+
+```cypher
+MATCH (cu:Cuenta {cuentaId:'REFERENCIA'}) RETURN properties(cu);
+MATCH (cl:Cliente)-[r]->(cu:Cuenta {cuentaId:'REFERENCIA'}) RETURN cl,r,cu;
+:exit
+```
+
+En la terminal del sistema, comprobar la misma cuenta contra ASFI:
+
+```bash
+.venv/bin/python scripts/demo_terminal.py verificar 13 REFERENCIA
+```
+
+Opcionalmente, abrir `http://127.0.0.1:7474` en el navegador, conectar a `bolt://127.0.0.1:7687` con las mismas credenciales y ejecutar `MATCH (cl:Cliente)-[r]->(cu:Cuenta) RETURN cl,r,cu LIMIT 20;`. La vista Graph permite mostrar nodos y relaciones; la consola de terminal muestra sus resultados en tabla.
+
+## 20. Guion hablado y evidencia que mostrar
+
+| Paso | Comando o sección | Qué explicar |
+|---|---|---|
+| 1 | `docker compose ps` y `/api/panel/servicios` | Hay seis motores y 14 servicios bancarios; cada uno tiene su cantidad de cuentas. |
+| 2 | Consultas de los apartados 5–9 | Los datos originales están cifrados y cada motor tiene su modelo. En Neo4j hay clientes y cuentas relacionados. |
+| 3 | `rejected_rows.csv` y `metrics.json` | Un dato inválido se registra con motivo y no derriba el procesamiento de los válidos. |
+| 4 | `demo_terminal.py intervalo 1` | La cotización cambia cada segundo; ASFI toma una tasa por lote. |
+| 5 | `demo_terminal.py ejecutar` | Los bancos trabajan concurrentemente; mostrar tiempos y contadores. |
+| 6 | Consulta de una cuenta y `demo_terminal.py verificar` | Banco y ASFI coinciden en saldo Bs, tasa y código; mostrar también la fórmula. |
+| 7 | Segundo barrido y misma referencia | Se conserva USD; se genera una nueva operación y se aplica una cotización disponible. |
+| 8 | `verificar_consolidacion.py` | La comprobación alcanza todas las cuentas, no únicamente una muestra. |
+| 9 | `tail -n 10 data/audit.jsonl` | Cada barrido nuevo tiene ID y cada evento fecha UTC; los errores conservan su causa disponible. |
+
+No mostrar toda la tabla de 123.785 filas en pantalla: usar COUNT, LIMIT y una referencia concreta. No confundir «banco con cero filas» con fallo si el dataset nuevo no asigna cuentas a ese banco.
