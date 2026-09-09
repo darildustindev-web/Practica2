@@ -21,7 +21,9 @@ import httpx
 
 
 async def benchmark(source,workers,output):
-    with tempfile.TemporaryDirectory(prefix='asfi-benchmark-') as temporary:
+    # ignore_cleanup_errors: la ASFI deja su propia conexión a asfi.sqlite abierta
+    # y en Windows eso impide borrar la carpeta temporal. No invalida la medición.
+    with tempfile.TemporaryDirectory(prefix='asfi-benchmark-', ignore_cleanup_errors=True) as temporary:
         temp=Path(temporary);stores=[];transports={};load_start=perf_counter()
         for bank in range(1,15):
             store=SQLiteStore('sqlite:///'+str(temp/f'bank{bank}.sqlite'))
@@ -58,6 +60,6 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir',type=Path,required=True)
     parser.add_argument('--workers',type=int,default=2)
-    parser.add_argument('--output',type=Path,default=Path(__file__).resolve().parents[1]/'docs'/'benchmark-conversion.json')
+    parser.add_argument('--output',type=Path,default=Path('/tmp/asfi-conversion-benchmark.json'))
     args=parser.parse_args()
     asyncio.run(benchmark(args.source_dir,args.workers,args.output))

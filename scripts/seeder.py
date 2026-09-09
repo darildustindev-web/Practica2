@@ -11,7 +11,7 @@ import sys
 import tempfile
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
@@ -88,8 +88,14 @@ def validate_row(row, seen_nro):
 
 def iter_rows(dataset, limit=None):
     # Deduplicación en disco: la RAM no crece con el número de cuentas.
-    with tempfile.TemporaryDirectory(prefix='asfi-validation-') as temp, \
-            sqlite3.connect(str(Path(temp)/'seen.sqlite')) as db, \
+    #
+    # `closing(...)` no es decorativo: `with sqlite3.connect(...) as db` NO cierra
+    # la conexión, sólo confirma o revierte la transacción. En Linux daba igual
+    # (se puede borrar un archivo abierto); en Windows la carpeta temporal no se
+    # podía borrar y el seeder moría con
+    # "[WinError 32] El proceso no tiene acceso al archivo".
+    with tempfile.TemporaryDirectory(prefix='asfi-validation-', ignore_cleanup_errors=True) as temp, \
+            closing(sqlite3.connect(str(Path(temp)/'seen.sqlite'))) as db, \
             Path(dataset).open(encoding='utf-8-sig', errors='replace', newline='') as source:
         db.execute('CREATE TABLE seen (nro TEXT PRIMARY KEY)')
         header = source.readline(32769)
@@ -176,7 +182,10 @@ def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_
         CipherFactory.get_cipher_for_bank(bank)
     metrics = dict(ejecucion_id=uuid.uuid4().hex, inicio=datetime.now(timezone.utc).isoformat(), leidas=0, cifradas=0, rechazadas=0, omitidas_cuota=0, workers=workers, batch_size=batch_size,
                    bancos={str(i):0 for i in range(1,15)})
-    with tempfile.TemporaryDirectory(prefix='.seed-', dir=output_dir) as tmp, ExitStack() as stack:
+    # ignore_cleanup_errors: si Windows deja algún descriptor colgando, se pierde
+    # la carpeta temporal pero NO se pierde una carga que ya terminó bien.
+    with tempfile.TemporaryDirectory(prefix='.seed-', dir=output_dir, ignore_cleanup_errors=True) as tmp, \
+            ExitStack() as stack:
         stage = Path(tmp)
         files = {i: stack.enter_context((stage/f'bank_{i:02d}.jsonl').open('w', encoding='utf-8')) for i in range(1,15)}
         rejected = stack.enter_context((stage/'rejected_rows.csv').open('w', encoding='utf-8', newline=''))
@@ -197,7 +206,9 @@ def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_
         def batches():
             batch = []
             # Muestreo reproducible en disco cuando se requiere la cuota oficial.
-            db = stack.enter_context(sqlite3.connect(str(stage/'sample.sqlite')))
+            # closing(): sin esto la conexión queda abierta y Windows no puede
+            # borrar la carpeta .seed-XXXX al terminar (WinError 32).
+            db = stack.enter_context(closing(sqlite3.connect(str(stage/'sample.sqlite'))))
             db.execute('CREATE TABLE sample (bank INT, rank REAL, line INT, payload TEXT)')
             import random
             rng = random.Random(seed_value)
@@ -243,6 +254,13 @@ def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_
         metrics['segundos'] = round(perf_counter()-started,4)
         metrics['registros_por_segundo'] = round(metrics['leidas']/max(metrics['segundos'],0.0001),2)
         (stage/'metrics.json').write_text(json.dumps(metrics,indent=2),encoding='utf-8')
+        # Windows no permite mover un archivo que sigue abierto, así que hay que
+        # cerrarlos antes de publicarlos (en Linux funcionaba igual sin cerrar).
+        # close() es idempotente: que ExitStack los cierre otra vez no molesta.
+        for f in [*files.values(),rejected]:
+            f.close()
+        # sample.sqlite no se mueve, y el ExitStack lo cierra (closing) antes de
+        # que se borre la carpeta temporal.
         for name in [*(f'bank_{i:02d}.jsonl' for i in range(1,15)), 'rejected_rows.csv', 'metrics.json']:
             os.replace(stage/name, output_dir/name)
     return metrics
