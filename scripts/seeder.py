@@ -109,7 +109,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def normalize_row(row: dict[str, str]) -> dict[str, str]:
-    return {str(key).strip(): (value or "").strip() for key, value in row.items()}
+    normalized = {str(key).strip(): (value or "").strip() for key, value in row.items()}
+    if "Saldo" in normalized:
+        normalized["Saldo"] = normalize_saldo(normalized["Saldo"])
+    return normalized
+
+
+def normalize_saldo(value: str) -> str:
+    """Normaliza saldos con puntos de miles sin alterar los decimales."""
+    saldo = str(value).strip().replace(" ", "")
+    parts = saldo.split(".")
+    if len(parts) > 2 and parts[0].isdigit() and all(len(part) == 3 and part.isdigit() for part in parts[1:]):
+        return "".join(parts)
+    return saldo
 
 
 def parse_saldo(value: str) -> float | None:

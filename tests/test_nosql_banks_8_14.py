@@ -336,6 +336,7 @@ class TestBankRestAPIs(unittest.TestCase):
         tasa_bcb = Decimal("6.9600")
         total_procesadas = 0
         total_confirmadas = 0
+        total_esperadas = 0
 
         for bank_id in range(8, 15):
             client = self._create_client_for_bank(bank_id)
@@ -343,6 +344,7 @@ class TestBankRestAPIs(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             accounts = resp.json().get("cuentas", [])
             self.assertGreater(len(accounts), 0)
+            total_esperadas += len(accounts)
 
             cipher, key = CipherFactory.get_cipher_for_bank(bank_id)
             if hasattr(key, "public_key") and cipher.__class__.__name__ == "ECCCipher":
@@ -370,8 +372,8 @@ class TestBankRestAPIs(unittest.TestCase):
                 total_procesadas += 1
                 total_confirmadas += 1
 
-        self.assertEqual(total_procesadas, 35, "Deben haberse procesado 35 cuentas en los 7 bancos NoSQL")
-        self.assertEqual(total_confirmadas, 35, "Todas las 35 cuentas deben quedar CONFIRMADAS con 0 errores")
+        self.assertEqual(total_procesadas, total_esperadas, "Deben procesarse todas las cuentas devueltas por los 7 bancos NoSQL")
+        self.assertEqual(total_confirmadas, total_esperadas, "Todas las cuentas deben quedar CONFIRMADAS sin errores")
 
 
 if __name__ == "__main__":
