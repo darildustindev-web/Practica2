@@ -1,75 +1,291 @@
-"""Adaptador MongoDB para el contrato común de los servicios bancarios."""
+"""Adaptador MongoDB para el contrato común de los servicios bancarios con soporte NoSQL avanzado y caché Redis."""
 from __future__ import annotations
 
+import json
+import logging
+import os
+import re
 import threading
 from typing import Any
+from urllib.parse import urlparse
 
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+from redis import Redis
 
 from common.bank_router import ConfirmationRequest
 
+logger = logging.getLogger(__name__)
+
+HEX_CODE_PATTERN = re.compile(r"^[0-9A-Fa-f]{8}$")
+
 
 class MongoStore:
-    def __init__(self, url: str):
+    def __init__(
+        self,
+        url: str,
+        bank_id: int | None = None,
+        redis_url: str | None = None,
+    ):
         prefix = "mongodb://"
-        if not url.startswith(prefix):
-            raise ValueError("DATABASE_URL de MongoDB debe comenzar con mongodb://")
-        self._client = MongoClient(url, serverSelectionTimeoutMS=5000)
-        database_name = url.rstrip("/").rsplit("/", 1)[-1]
-        if not database_name or ":" in database_name:
-            raise ValueError("DATABASE_URL de MongoDB debe incluir el nombre de la base")
-        self._collection = self._client[database_name]["cuentas"]
-        self._lock = threading.Lock()
-        self._collection.create_index("nro", unique=True)
+        if not url.startswith(prefix) and not url.startswith("mongodb+srv://"):
+            raise ValueError("DATABASE_URL de MongoDB debe comenzar con mongodb:// o mongodb+srv://")
 
-    def encrypted_accounts(self, offset: int, limit: int) -> list[dict[str, Any]]:
+        self._bank_id = bank_id if bank_id is not None else int(os.getenv("BANK_ID", "0"))
+        self._client = MongoClient(url, serverSelectionTimeoutMS=5000)
+
+        # Extraer nombre de base de datos de la URL de forma segura
+        parsed = urlparse(url)
+        path = parsed.path.lstrip("/").split("?")[0]
+        database_name = path if path else (f"bank_{self._bank_id:02d}" if self._bank_id else "bank_default")
+
+        self._db_name = database_name
+        self._database = self._client[database_name]
+        self._collection = self._database["cuentas"]
+        self._lock = threading.Lock()
+
+        # Índices requeridos para rendimiento y aislamiento de cuentas
+        try:
+            self._collection.create_index("nro", unique=True)
+            self._collection.create_index("id_banco")
+            self._collection.create_index("codigo_verificacion")
+        except PyMongoError as error:
+            logger.warning("No se pudieron crear índices en MongoDB (%s): %s", database_name, error)
+
+        # Conexión opcional a Redis para caché y trazabilidad rápida de transacciones
+        redis_target_url = redis_url or os.getenv("REDIS_URL")
+        self._redis: Redis | None = None
+        self._redis_prefix = f"bank:{self._bank_id if self._bank_id else database_name}"
+
+        if redis_target_url:
+            try:
+                parsed_redis = urlparse(redis_target_url)
+                if parsed_redis.scheme == "redis" and parsed_redis.hostname:
+                    self._redis = Redis(
+                        host=parsed_redis.hostname,
+                        port=parsed_redis.port or 6379,
+                        db=int(parsed_redis.path.lstrip("/") or 0),
+                        decode_responses=True,
+                        socket_timeout=2.0,
+                    )
+                    self._redis.ping()
+            except Exception as error:
+                logger.warning("Redis no disponible para MongoStore (%s): %s", database_name, error)
+                self._redis = None
+
+    @property
+    def bank_id(self) -> int:
+        return self._bank_id
+
+    @property
+    def db_name(self) -> str:
+        return self._db_name
+
+    def count_accounts(self) -> int:
+        """Retorna el número total de cuentas de este banco en MongoDB."""
+        filter_query: dict[str, Any] = {}
+        if self._bank_id > 0:
+            filter_query["id_banco"] = self._bank_id
+        return self._collection.count_documents(filter_query)
+
+    def get_account(self, account_ref: str) -> dict[str, Any] | None:
+        """Obtiene una cuenta específica por su referencia / CuentaId."""
+        filter_query: dict[str, Any] = {"nro": str(account_ref)}
+        if self._bank_id > 0:
+            filter_query["id_banco"] = self._bank_id
+
+        record = self._collection.find_one(filter_query, {"_id": 0})
+        if not record:
+            return None
+        return self._to_api_record(record)
+
+    def encrypted_accounts(self, offset: int = 0, limit: int = 100) -> list[dict[str, Any]]:
+        """Consulta paginada de cuentas cifradas garantizando aislamiento por banco."""
+        filter_query: dict[str, Any] = {}
+        if self._bank_id > 0:
+            filter_query["id_banco"] = self._bank_id
+
         projection = {"_id": 0}
-        cursor = self._collection.find({}, projection).sort("nro", 1).skip(offset).limit(limit)
-        return [self._to_api_record(record) for record in cursor]
+        try:
+            cursor = (
+                self._collection.find(filter_query, projection)
+                .sort("nro", 1)
+                .skip(offset)
+                .limit(limit)
+            )
+            return [self._to_api_record(record) for record in cursor]
+        except PyMongoError as error:
+            logger.error("Error al consultar cuentas en MongoDB (%s): %s", self._db_name, error)
+            raise ConnectionError(f"Error de conexión a MongoDB: {error}") from error
 
     def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
+        """Confirma una transacción validando código hexadecimal de 8 dígitos y control de estado."""
+        verification_code = request.verification_code.strip().upper()
+        if not HEX_CODE_PATTERN.fullmatch(verification_code):
+            raise ValueError("El código de verificación debe contener exactamente 8 caracteres hexadecimales (0-9, A-F)")
+
         with self._lock:
-            result = self._collection.update_one(
-                {"nro": request.account_ref},
-                {
-                    "$set": {
-                        "saldo_bs": request.saldo_bs,
-                        "codigo_verificacion": request.verification_code.upper(),
-                        "tipo_cambio": request.exchange_rate,
-                        "convertido_at": request.converted_at.isoformat(),
+            filter_query: dict[str, Any] = {"nro": request.account_ref}
+            if self._bank_id > 0:
+                filter_query["id_banco"] = self._bank_id
+
+            existing = self._collection.find_one(filter_query)
+            if existing is None:
+                raise KeyError(f"Cuenta '{request.account_ref}' no encontrada en el banco {self._bank_id}")
+
+            existing_code = existing.get("codigo_verificacion")
+            existing_status = existing.get("estado", "PENDIENTE")
+
+            # Control de transacciones / prevención de reutilización y alteración
+            if existing_code:
+                if existing_code == verification_code:
+                    # Idempotencia: confirmación idéntica ya procesada
+                    return {
+                        "account_ref": request.account_ref,
+                        "cuenta_id": request.account_ref,
+                        "banco_id": self._bank_id,
+                        "verification_code": verification_code,
+                        "codigo_verificacion": verification_code,
+                        "saldo_bs": existing.get("saldo_bs", request.saldo_bs),
+                        "tipo_cambio": existing.get("tipo_cambio", request.exchange_rate),
+                        "status": "CONFIRMADA",
+                        "estado": "CONFIRMADA",
+                        "converted_at": request.converted_at,
+                        "reintento": True,
                     }
-                },
-            )
-            if result.matched_count != 1:
-                raise KeyError("Cuenta no encontrada")
+                else:
+                    raise ValueError(
+                        f"Operación rechazada: La cuenta '{request.account_ref}' ya fue confirmada previamente "
+                        f"con el código de verificación '{existing_code}'."
+                    )
+
+            # Actualizar en MongoDB
+            update_data = {
+                "saldo_bs": request.saldo_bs,
+                "codigo_verificacion": verification_code,
+                "tipo_cambio": request.exchange_rate,
+                "convertido_at": request.converted_at.isoformat(),
+                "estado": "CONFIRMADA",
+            }
+            self._collection.update_one(filter_query, {"$set": update_data})
+
+            # Trazabilidad rápida en Redis si está disponible
+            if self._redis:
+                try:
+                    tx_key = f"{self._redis_prefix}:tx:{request.account_ref}"
+                    self._redis.hset(
+                        tx_key,
+                        mapping={
+                            "account_ref": request.account_ref,
+                            "verification_code": verification_code,
+                            "saldo_bs": request.saldo_bs,
+                            "tipo_cambio": request.exchange_rate,
+                            "estado": "CONFIRMADA",
+                            "convertido_at": request.converted_at.isoformat(),
+                        },
+                    )
+                    # Actualizar también caché de cuenta
+                    cuenta_key = f"{self._redis_prefix}:cuenta:{request.account_ref}"
+                    if self._redis.exists(cuenta_key):
+                        self._redis.hset(cuenta_key, mapping=update_data)
+                except Exception as error:
+                    logger.warning("No se pudo registrar transacción en Redis: %s", error)
+
         return {
             "account_ref": request.account_ref,
-            "verification_code": request.verification_code.upper(),
+            "cuenta_id": request.account_ref,
+            "banco_id": self._bank_id,
+            "verification_code": verification_code,
+            "codigo_verificacion": verification_code,
+            "saldo_bs": request.saldo_bs,
+            "tipo_cambio": request.exchange_rate,
             "status": "CONFIRMADA",
+            "estado": "CONFIRMADA",
             "converted_at": request.converted_at,
         }
 
     def upsert_account(self, record: dict[str, Any]) -> None:
+        """Inserta o actualiza un registro de cuenta en MongoDB y opcionalmente en Redis."""
+        nro = str(record.get("Nro") or record.get("CuentaId") or record.get("nro"))
+        id_banco = int(record.get("IdBanco") or record.get("BancoId") or record.get("id_banco", self._bank_id))
+
         document = {
-            "nro": str(record["Nro"]),
-            "identificacion": record["Identificacion"],
-            "nombres": record["Nombres"],
-            "apellidos": record["Apellidos"],
-            "nro_cuenta": record["NroCuenta"],
-            "id_banco": int(record["IdBanco"]),
-            "saldo": record["Saldo"],
+            "nro": nro,
+            "cuenta_id": nro,
+            "identificacion": record.get("Identificacion") or record.get("identificacion", ""),
+            "nombres": record.get("Nombres") or record.get("nombres", ""),
+            "apellidos": record.get("Apellidos") or record.get("apellidos", ""),
+            "nro_cuenta": record.get("NroCuenta") or record.get("nro_cuenta", ""),
+            "id_banco": id_banco,
+            "banco_id": id_banco,
+            "saldo": record.get("Saldo") or record.get("SaldoUSD") or record.get("saldo", ""),
+            "saldo_usd": record.get("SaldoUSD") or record.get("Saldo") or record.get("saldo", ""),
+            "saldo_bs": record.get("SaldoBs") or record.get("saldo_bs"),
+            "estado": record.get("Estado") or record.get("estado", "PENDIENTE"),
+            "codigo_verificacion": record.get("CodigoVerificacion") or record.get("codigo_verificacion"),
+            "tipo_cambio": record.get("TipoCambio") or record.get("tipo_cambio"),
+            "convertido_at": record.get("FechaConversion") or record.get("convertido_at"),
         }
+
         with self._lock:
             self._collection.replace_one({"nro": document["nro"]}, document, upsert=True)
 
+            if self._redis:
+                try:
+                    cuenta_key = f"{self._redis_prefix}:cuenta:{nro}"
+                    redis_map = {k: str(v) for k, v in document.items() if v is not None}
+                    self._redis.hset(cuenta_key, mapping=redis_map)
+                except Exception as error:
+                    logger.warning("No se pudo cachear cuenta en Redis: %s", error)
+
+    def health_check(self) -> dict[str, Any]:
+        """Comprueba estado de conexión a MongoDB y Redis."""
+        mongo_ok = False
+        redis_ok = False
+        try:
+            self._client.admin.command("ping")
+            mongo_ok = True
+        except Exception:
+            mongo_ok = False
+
+        if self._redis:
+            try:
+                self._redis.ping()
+                redis_ok = True
+            except Exception:
+                redis_ok = False
+
+        return {
+            "mongo_connected": mongo_ok,
+            "database": self._db_name,
+            "redis_connected": redis_ok,
+            "redis_prefix": self._redis_prefix if self._redis else None,
+        }
+
     @staticmethod
     def _to_api_record(record: dict[str, Any]) -> dict[str, Any]:
+        """Mapea documento de MongoDB a formato compatible con ASFI y la práctica."""
+        nro = str(record.get("nro", ""))
+        id_banco = int(record.get("id_banco", 0))
+        saldo_usd = str(record.get("saldo", ""))
+        saldo_bs = record.get("saldo_bs")
+        estado = record.get("estado", "PENDIENTE" if not record.get("codigo_verificacion") else "CONFIRMADA")
+
         return {
-            "Nro": record["nro"],
-            "Identificacion": record["identificacion"],
-            "Nombres": record["nombres"],
-            "Apellidos": record["apellidos"],
-            "NroCuenta": record["nro_cuenta"],
-            "IdBanco": record["id_banco"],
-            "Saldo": record["saldo"],
+            "Nro": nro,
+            "CuentaId": nro,
+            "Identificacion": record.get("identificacion", ""),
+            "Nombres": record.get("nombres", ""),
+            "Apellidos": record.get("apellidos", ""),
+            "NroCuenta": record.get("nro_cuenta", ""),
+            "IdBanco": id_banco,
+            "BancoId": id_banco,
+            "Saldo": saldo_usd,
+            "SaldoUSD": saldo_usd,
+            "SaldoBs": saldo_bs,
+            "Estado": estado,
+            "CodigoVerificacion": record.get("codigo_verificacion"),
+            "FechaConversion": record.get("convertido_at"),
+            "TipoCambio": record.get("tipo_cambio"),
         }
+

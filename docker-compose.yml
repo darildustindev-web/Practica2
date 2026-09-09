@@ -87,6 +87,8 @@ services:
     container_name: banks-nosql-db
     ports:
       - "27017:27017"
+    volumes:
+      - banks_mongo_data:/data/db
 
   # Base NoSQL en memoria (Banco Fortaleza)
   bank10-fortaleza-redis:
@@ -94,16 +96,26 @@ services:
     container_name: bank10-fortaleza-redis
     ports:
       - "6379:6379"
+    volumes:
+      - bank10_redis_data:/data
 
   # Base de Datos de Grafos (Neo4j - Banco BDP)
   bank13-bdp-neo4j:
     image: neo4j:5.11
     container_name: bank13-bdp-neo4j
     environment:
-      NEO4J_AUTH: neo4j/bdp_password
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/bdp_password}
     ports:
       - "7474:7474" # HTTP UI
       - "7687:7687" # Bolt protocol
+    volumes:
+      - bank13_neo4j_data:/data
+      - bank13_neo4j_logs:/logs
 
 volumes:
   asfi_pgdata:
+  banks_mongo_data:
+  bank10_redis_data:
+  bank13_neo4j_data:
+  bank13_neo4j_logs:
+
