@@ -86,30 +86,73 @@ class PostgreSQLStore:
             "converted_at": request.converted_at,
         }
 
-    def upsert_account(self, record: dict[str, Any]) -> None:
+    def confirm_batch(self, requests: list[ConfirmationRequest]) -> list[dict[str, Any]]:
+        if not requests:
+            return []
+        query = """
+        UPDATE cuentas
+        SET saldo_bs = %s,
+            codigo_verificacion = %s,
+            tipo_cambio = %s,
+            convertido_at = %s
+        WHERE nro = %s
+        """
+        params = [
+            (
+                r.saldo_bs,
+                r.verification_code.upper(),
+                r.exchange_rate,
+                r.converted_at,
+                r.account_ref,
+            )
+            for r in requests
+        ]
+        from psycopg2.extras import execute_batch
         with self._lock, self._connection:
             with self._connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO cuentas
-                        (nro, identificacion, nombres, apellidos,
-                         nro_cuenta, id_banco, saldo)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (nro) DO UPDATE SET
-                        identificacion = EXCLUDED.identificacion,
-                        nombres = EXCLUDED.nombres,
-                        apellidos = EXCLUDED.apellidos,
-                        nro_cuenta = EXCLUDED.nro_cuenta,
-                        id_banco = EXCLUDED.id_banco,
-                        saldo = EXCLUDED.saldo
-                    """,
-                    (
-                        str(record["Nro"]),
-                        record["Identificacion"],
-                        record["Nombres"],
-                        record["Apellidos"],
-                        record["NroCuenta"],
-                        int(record["IdBanco"]),
-                        record["Saldo"],
-                    ),
-                )
+                execute_batch(cursor, query, params, page_size=1000)
+        return [
+            {
+                "account_ref": r.account_ref,
+                "verification_code": r.verification_code.upper(),
+                "status": "CONFIRMADA",
+                "converted_at": r.converted_at,
+            }
+            for r in requests
+        ]
+
+    def upsert_account(self, record: dict[str, Any]) -> None:
+        self.upsert_accounts_batch([record])
+
+    def upsert_accounts_batch(self, records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        query = """
+        INSERT INTO cuentas
+            (nro, identificacion, nombres, apellidos,
+             nro_cuenta, id_banco, saldo)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (nro) DO UPDATE SET
+            identificacion = EXCLUDED.identificacion,
+            nombres = EXCLUDED.nombres,
+            apellidos = EXCLUDED.apellidos,
+            nro_cuenta = EXCLUDED.nro_cuenta,
+            id_banco = EXCLUDED.id_banco,
+            saldo = EXCLUDED.saldo
+        """
+        params = [
+            (
+                str(r["Nro"]),
+                r["Identificacion"],
+                r["Nombres"],
+                r["Apellidos"],
+                r["NroCuenta"],
+                int(r["IdBanco"]),
+                r["Saldo"],
+            )
+            for r in records
+        ]
+        from psycopg2.extras import execute_batch
+        with self._lock, self._connection:
+            with self._connection.cursor() as cursor:
+                execute_batch(cursor, query, params, page_size=1000)

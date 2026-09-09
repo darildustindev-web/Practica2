@@ -68,15 +68,49 @@ class RedisStore:
             "converted_at": request.converted_at,
         }
 
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        account = {
-            "nro": str(record["Nro"]),
-            "identificacion": record["Identificacion"],
-            "nombres": record["Nombres"],
-            "apellidos": record["Apellidos"],
-            "nro_cuenta": record["NroCuenta"],
-            "id_banco": str(int(record["IdBanco"])),
-            "saldo": record["Saldo"],
-        }
+    def confirm_batch(self, requests: list[ConfirmationRequest]) -> list[dict[str, Any]]:
+        if not requests:
+            return []
         with self._lock:
-            self._redis.hset(self._key(account["nro"]), mapping=account)
+            pipe = self._redis.pipeline(transaction=False)
+            for r in requests:
+                pipe.hset(
+                    self._key(r.account_ref),
+                    mapping={
+                        "saldo_bs": r.saldo_bs,
+                        "codigo_verificacion": r.verification_code.upper(),
+                        "tipo_cambio": r.exchange_rate,
+                        "convertido_at": r.converted_at.isoformat(),
+                    }
+                )
+            pipe.execute()
+        return [
+            {
+                "account_ref": r.account_ref,
+                "verification_code": r.verification_code.upper(),
+                "status": "CONFIRMADA",
+                "converted_at": r.converted_at,
+            }
+            for r in requests
+        ]
+
+    def upsert_account(self, record: dict[str, Any]) -> None:
+        self.upsert_accounts_batch([record])
+
+    def upsert_accounts_batch(self, records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        with self._lock:
+            pipe = self._redis.pipeline(transaction=False)
+            for record in records:
+                account = {
+                    "nro": str(record["Nro"]),
+                    "identificacion": record["Identificacion"],
+                    "nombres": record["Nombres"],
+                    "apellidos": record["Apellidos"],
+                    "nro_cuenta": record["NroCuenta"],
+                    "id_banco": str(int(record["IdBanco"])),
+                    "saldo": record["Saldo"],
+                }
+                pipe.hset(self._key(account["nro"]), mapping=account)
+            pipe.execute()

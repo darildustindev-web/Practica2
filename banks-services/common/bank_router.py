@@ -95,8 +95,14 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
         }
 
     @router.post("/cuentas/confirmar")
-    def confirm_account(request: ConfirmationRequest) -> dict[str, Any]:
+    def confirm_account(
+        request: ConfirmationRequest | list[ConfirmationRequest]
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         try:
+            if isinstance(request, list):
+                if hasattr(store, "confirm_batch"):
+                    return store.confirm_batch(request)
+                return [store.confirm(r) for r in request]
             return store.confirm(request)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

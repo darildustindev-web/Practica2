@@ -49,18 +49,61 @@ class MongoStore:
             "converted_at": request.converted_at,
         }
 
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        document = {
-            "nro": str(record["Nro"]),
-            "identificacion": record["Identificacion"],
-            "nombres": record["Nombres"],
-            "apellidos": record["Apellidos"],
-            "nro_cuenta": record["NroCuenta"],
-            "id_banco": int(record["IdBanco"]),
-            "saldo": record["Saldo"],
-        }
+    def confirm_batch(self, requests: list[ConfirmationRequest]) -> list[dict[str, Any]]:
+        if not requests:
+            return []
+        from pymongo import UpdateOne
+        operations = [
+            UpdateOne(
+                {"nro": r.account_ref},
+                {
+                    "$set": {
+                        "saldo_bs": r.saldo_bs,
+                        "codigo_verificacion": r.verification_code.upper(),
+                        "tipo_cambio": r.exchange_rate,
+                        "convertido_at": r.converted_at.isoformat(),
+                    }
+                }
+            )
+            for r in requests
+        ]
         with self._lock:
-            self._collection.replace_one({"nro": document["nro"]}, document, upsert=True)
+            self._collection.bulk_write(operations, ordered=False)
+        return [
+            {
+                "account_ref": r.account_ref,
+                "verification_code": r.verification_code.upper(),
+                "status": "CONFIRMADA",
+                "converted_at": r.converted_at,
+            }
+            for r in requests
+        ]
+
+    def upsert_account(self, record: dict[str, Any]) -> None:
+        self.upsert_accounts_batch([record])
+
+    def upsert_accounts_batch(self, records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        from pymongo import ReplaceOne
+        operations = [
+            ReplaceOne(
+                {"nro": str(r["Nro"])},
+                {
+                    "nro": str(r["Nro"]),
+                    "identificacion": r["Identificacion"],
+                    "nombres": r["Nombres"],
+                    "apellidos": r["Apellidos"],
+                    "nro_cuenta": r["NroCuenta"],
+                    "id_banco": int(r["IdBanco"]),
+                    "saldo": r["Saldo"],
+                },
+                upsert=True,
+            )
+            for r in records
+        ]
+        with self._lock:
+            self._collection.bulk_write(operations, ordered=False)
 
     @staticmethod
     def _to_api_record(record: dict[str, Any]) -> dict[str, Any]:

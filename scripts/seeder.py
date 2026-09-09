@@ -44,32 +44,19 @@ def parse_args() -> argparse.Namespace:
         "--limit",
         type=int,
         default=None,
-        help="Limita la cantidad de registros para una prueba local",
+        help="Limita la cantidad total de registros válidos procesados",
+    )
+    parser.add_argument(
+        "--limit-per-bank",
+        type=int,
+        default=None,
+        help="Limita la cantidad de registros por banco (ej. 1000)",
     )
     return parser.parse_args()
 
 
 def normalize_row(row: dict[str, str]) -> dict[str, str]:
     return {str(key).strip(): (value or "").strip() for key, value in row.items()}
-
-
-def load_rows(dataset: Path, limit: int | None) -> list[dict[str, str]]:
-    with dataset.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        columns = set(reader.fieldnames or [])
-        missing = REQUIRED_COLUMNS - columns
-        if missing:
-            raise ValueError(f"Faltan columnas requeridas: {', '.join(sorted(missing))}")
-
-        rows = []
-        for row in reader:
-            normalized = normalize_row(row)
-            if normalized["IdBanco"] not in {str(bank_id) for bank_id in range(1, 15)}:
-                raise ValueError(f"IdBanco invalido: {normalized['IdBanco']}")
-            rows.append(normalized)
-            if limit is not None and len(rows) >= limit:
-                break
-    return rows
 
 
 def create_bank_strategies() -> dict[int, tuple[Any, Any]]:
@@ -90,11 +77,18 @@ def encrypt_row(row: dict[str, str], cipher: Any, key: Any) -> dict[str, Any]:
     return encrypted
 
 
-def write_bank_files(rows: list[dict[str, str]], output_dir: Path) -> dict[int, int]:
+def process_dataset(
+    dataset: Path,
+    output_dir: Path,
+    limit: int | None = None,
+    limit_per_bank: int | None = None,
+) -> tuple[int, int, dict[int, int]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     strategies = create_bank_strategies()
     files = {}
     counts = {bank_id: 0 for bank_id in range(1, 15)}
+    total_valid = 0
+    total_skipped = 0
 
     try:
         for bank_id in range(1, 15):
@@ -102,31 +96,67 @@ def write_bank_files(rows: list[dict[str, str]], output_dir: Path) -> dict[int, 
                 "w", encoding="utf-8"
             )
 
-        for row in rows:
-            bank_id = int(row["IdBanco"])
-            cipher, key = strategies[bank_id]
-            record = encrypt_row(row, cipher, key)
-            json.dump(record, files[bank_id], ensure_ascii=False)
-            files[bank_id].write("\n")
-            counts[bank_id] += 1
-    finally:
-        for file in files.values():
-            file.close()
+        with dataset.open("r", encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            columns = set(reader.fieldnames or [])
+            missing = REQUIRED_COLUMNS - columns
+            if missing:
+                raise ValueError(f"Faltan columnas requeridas: {', '.join(sorted(missing))}")
 
-    return counts
+            for row_idx, raw_row in enumerate(reader, start=2):
+                row = normalize_row(raw_row)
+                bank_str = row.get("IdBanco", "")
+                if bank_str not in {str(b) for b in range(1, 15)}:
+                    total_skipped += 1
+                    print(f"⚠️ [Fila {row_idx}] Descartada por IdBanco inválido: '{bank_str}' (Nro: {row.get('Nro')})")
+                    continue
+
+                bank_id = int(bank_str)
+                if limit_per_bank is not None and counts[bank_id] >= limit_per_bank:
+                    # Si todos los bancos llegaron al límite, terminar
+                    if all(c >= limit_per_bank for c in counts.values()):
+                        break
+                    continue
+
+                cipher, key = strategies[bank_id]
+                try:
+                    record = encrypt_row(row, cipher, key)
+                    json.dump(record, files[bank_id], ensure_ascii=False)
+                    files[bank_id].write("\n")
+                    counts[bank_id] += 1
+                    total_valid += 1
+                except Exception as err:
+                    total_skipped += 1
+                    print(f"⚠️ [Fila {row_idx}] Error al cifrar banco {bank_id}: {err}")
+                    continue
+
+                if limit is not None and total_valid >= limit:
+                    break
+    finally:
+        for f in files.values():
+            f.close()
+
+    return total_valid, total_skipped, counts
 
 
 def main() -> None:
     args = parse_args()
-    rows = load_rows(args.dataset, args.limit)
-    counts = write_bank_files(rows, args.output_dir)
+    total_valid, total_skipped, counts = process_dataset(
+        args.dataset,
+        args.output_dir,
+        limit=args.limit,
+        limit_per_bank=args.limit_per_bank,
+    )
     configured_banks = sum(1 for count in counts.values() if count > 0)
-    print(f"Registros procesados: {len(rows)}")
+    print(f"\n==========================================")
+    print(f"Registros válidos cifrados: {total_valid}")
+    print(f"Registros descartados/anomalías: {total_skipped}")
     print(f"Bancos con datos: {configured_banks}/14")
+    print(f"==========================================")
     for bank_id, count in counts.items():
         if count:
             bank = get_bank_key(bank_id)
-            print(f"Banco {bank_id} ({bank['type']}): {count} registros")
+            print(f"Banco {bank_id:02d} ({bank['type']}): {count} registros")
 
 
 if __name__ == "__main__":

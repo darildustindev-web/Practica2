@@ -82,29 +82,67 @@ class SQLiteStore:
             "converted_at": request.converted_at,
         }
 
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        with self._lock, self._connection:
-            self._connection.execute(
-                """
-                INSERT INTO cuentas
-                    (nro, identificacion, nombres, apellidos,
-                     nro_cuenta, id_banco, saldo)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(nro) DO UPDATE SET
-                    identificacion = excluded.identificacion,
-                    nombres = excluded.nombres,
-                    apellidos = excluded.apellidos,
-                    nro_cuenta = excluded.nro_cuenta,
-                    id_banco = excluded.id_banco,
-                    saldo = excluded.saldo
-                """,
-                (
-                    str(record["Nro"]),
-                    record["Identificacion"],
-                    record["Nombres"],
-                    record["Apellidos"],
-                    record["NroCuenta"],
-                    int(record["IdBanco"]),
-                    record["Saldo"],
-                ),
+    def confirm_batch(self, requests: list[ConfirmationRequest]) -> list[dict[str, Any]]:
+        if not requests:
+            return []
+        query = """
+        UPDATE cuentas
+        SET saldo_bs = ?, codigo_verificacion = ?,
+            tipo_cambio = ?, convertido_at = ?
+        WHERE nro = ?
+        """
+        params = [
+            (
+                r.saldo_bs,
+                r.verification_code.upper(),
+                r.exchange_rate,
+                r.converted_at.isoformat(),
+                r.account_ref,
             )
+            for r in requests
+        ]
+        with self._lock, self._connection:
+            self._connection.executemany(query, params)
+        return [
+            {
+                "account_ref": r.account_ref,
+                "verification_code": r.verification_code.upper(),
+                "status": "CONFIRMADA",
+                "converted_at": r.converted_at,
+            }
+            for r in requests
+        ]
+
+    def upsert_account(self, record: dict[str, Any]) -> None:
+        self.upsert_accounts_batch([record])
+
+    def upsert_accounts_batch(self, records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        query = """
+        INSERT INTO cuentas
+            (nro, identificacion, nombres, apellidos,
+             nro_cuenta, id_banco, saldo)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(nro) DO UPDATE SET
+            identificacion = excluded.identificacion,
+            nombres = excluded.nombres,
+            apellidos = excluded.apellidos,
+            nro_cuenta = excluded.nro_cuenta,
+            id_banco = excluded.id_banco,
+            saldo = excluded.saldo
+        """
+        params = [
+            (
+                str(r["Nro"]),
+                r["Identificacion"],
+                r["Nombres"],
+                r["Apellidos"],
+                r["NroCuenta"],
+                int(r["IdBanco"]),
+                r["Saldo"],
+            )
+            for r in records
+        ]
+        with self._lock, self._connection:
+            self._connection.executemany(query, params)

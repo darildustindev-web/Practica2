@@ -19,12 +19,18 @@ def main() -> None:
     args = parser.parse_args()
     store = Neo4jStore(args.database_url)
     count = 0
+    batch = []
     try:
         with args.source.open(encoding="utf-8") as source:
             for line in source:
                 if line.strip():
-                    store.upsert_account(json.loads(line))
+                    batch.append(json.loads(line))
                     count += 1
+                    if len(batch) >= 1000:
+                        store.upsert_accounts_batch(batch)
+                        batch = []
+            if batch:
+                store.upsert_accounts_batch(batch)
     finally:
         store.close()
     print(f"Registros cargados en Neo4j: {count}")
