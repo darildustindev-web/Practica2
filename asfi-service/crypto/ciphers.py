@@ -42,10 +42,10 @@ class CaesarCipher(BaseCipher):
         shift = int(key) if key is not None else 3
         res = []
         for ch in str(plain_text):
-            if ch.isalpha():
+            if ch.isascii() and ch.isalpha():
                 start = ord('A') if ch.isupper() else ord('a')
                 res.append(chr((ord(ch) - start + shift) % 26 + start))
-            elif ch.isdigit():
+            elif ch.isascii() and ch.isdigit():
                 res.append(chr((ord(ch) - ord('0') + shift) % 10 + ord('0')))
             else:
                 res.append(ch)
@@ -63,11 +63,11 @@ class AtbashCipher(BaseCipher):
     def encrypt(self, plain_text: str, key=None) -> str:
         res = []
         for ch in str(plain_text):
-            if ch.isupper():
+            if ch.isascii() and ch.isupper():
                 res.append(chr(ord('Z') - (ord(ch) - ord('A'))))
-            elif ch.islower():
+            elif ch.isascii() and ch.islower():
                 res.append(chr(ord('z') - (ord(ch) - ord('a'))))
-            elif ch.isdigit():
+            elif ch.isascii() and ch.isdigit():
                 res.append(chr(ord('9') - (ord(ch) - ord('0'))))
             else:
                 res.append(ch)
@@ -88,11 +88,11 @@ class VigenereCipher(BaseCipher):
         for ch in str(plain_text):
             k_char = key_str[k_idx % len(key_str)]
             shift = ord(k_char) - ord('A')
-            if ch.isalpha():
+            if ch.isascii() and ch.isalpha():
                 start = ord('A') if ch.isupper() else ord('a')
                 res.append(chr((ord(ch) - start + shift) % 26 + start))
                 k_idx += 1
-            elif ch.isdigit():
+            elif ch.isascii() and ch.isdigit():
                 res.append(chr((ord(ch) - ord('0') + shift) % 10 + ord('0')))
                 k_idx += 1
             else:
@@ -106,11 +106,11 @@ class VigenereCipher(BaseCipher):
         for ch in str(cipher_text):
             k_char = key_str[k_idx % len(key_str)]
             shift = ord(k_char) - ord('A')
-            if ch.isalpha():
+            if ch.isascii() and ch.isalpha():
                 start = ord('A') if ch.isupper() else ord('a')
                 res.append(chr((ord(ch) - start - shift) % 26 + start))
                 k_idx += 1
-            elif ch.isdigit():
+            elif ch.isascii() and ch.isdigit():
                 res.append(chr((ord(ch) - ord('0') - shift) % 10 + ord('0')))
                 k_idx += 1
             else:
@@ -136,8 +136,7 @@ class PlayfairCipher(BaseCipher):
     posicion original y marca donde va cada caracter cifrado, (2) una mascara
     de mayusculas/minusculas, y (3) las posiciones exactas de relleno 'X'
     insertadas por el algoritmo, para poder retirarlas sin ambiguedad al
-    descifrar. La fusion clasica I/J de Playfair se mantiene intacta: es una
-    propiedad conocida del algoritmo, no un error.
+    descifrar. La matriz 6x6 conserva I y J por separado para reconstruir nombres exactos.
     """
 
     # Marcadores del Area de Uso Privado de Unicode (nunca aparecen en texto
@@ -165,11 +164,11 @@ class PlayfairCipher(BaseCipher):
         case_bits = []
         payload_chars = []
         for ch in text:
-            if ch.isalnum():
+            if ch.isascii() and ch.isalnum():
                 template_chars.append(self._SLOT)
                 case_bits.append("0" if ch.islower() else "1")
                 normalized = ch.upper()
-                payload_chars.append("I" if normalized == "J" else normalized)
+                payload_chars.append(normalized)
             else:
                 template_chars.append(ch)
         return "".join(template_chars), "".join(case_bits), "".join(payload_chars)
@@ -410,20 +409,55 @@ class BlowfishCipher(BaseCipher):
 # 9. Banco Solidario - Cifrado Twofish
 # ==========================================
 class TwofishCipher(BaseCipher):
+    """Twofish-256 CBC + HMAC-SHA256; lectura compatible del antiguo AES sin prefijo."""
+    PREFIX = 'TF1:'
+
     def _prepare_key(self, key) -> bytes:
         k = str(key).encode() if key else b"secrettwofishkey"
         return k[:32].ljust(32, b'0')
 
     def encrypt(self, plain_text: str, key="secrettwofishkey") -> str:
+        from crypto.twofish_backend import Twofish
+        import secrets, hashlib, hmac
         k = self._prepare_key(key)
-        cipher = AES.new(k[:16], AES.MODE_CTR, nonce=b'TwofishN')
-        return base64.b64encode(cipher.encrypt(str(plain_text).encode('utf-8'))).decode('utf-8')
+        cipher = Twofish(k)
+        iv = secrets.token_bytes(16)
+        previous = iv
+        output = bytearray(iv)
+        data = pad(str(plain_text).encode('utf-8'), 16)
+        for offset in range(0, len(data), 16):
+            previous = cipher.encrypt(bytes(a ^ b for a, b in zip(data[offset:offset+16], previous)))
+            output.extend(previous)
+        mac_key = hmac.digest(k, b'twofish-authentication-v1', 'sha256')
+        tag = hmac.digest(mac_key, self.PREFIX.encode()+output, 'sha256')
+        return self.PREFIX + base64.b64encode(output+tag).decode('ascii')
 
     def decrypt(self, cipher_text: str, key="secrettwofishkey") -> str:
+        from crypto.twofish_backend import Twofish
+        import hmac
         k = self._prepare_key(key)
-        cipher = AES.new(k[:16], AES.MODE_CTR, nonce=b'TwofishN')
-        enc_bytes = base64.b64decode(str(cipher_text).encode('utf-8'))
-        return cipher.decrypt(enc_bytes).decode('utf-8')
+        text = str(cipher_text)
+        if not text.startswith(self.PREFIX):
+            # Compatibilidad explícita: datos de pruebas anteriores son AES, NO Twofish.
+            if ':' in text:
+                raise ValueError('Versión de cifrado Twofish no reconocida')
+            cipher = AES.new(k[:16], AES.MODE_CTR, nonce=b'TwofishN')
+            return cipher.decrypt(base64.b64decode(text, validate=True)).decode('utf-8')
+        raw = base64.b64decode(text[len(self.PREFIX):], validate=True)
+        if len(raw) < 64 or (len(raw)-48) % 16:
+            raise ValueError('Formato Twofish truncado o inválido')
+        body, tag = raw[:-32], raw[-32:]
+        mac_key = hmac.digest(k, b'twofish-authentication-v1', 'sha256')
+        if not hmac.compare_digest(tag, hmac.digest(mac_key, self.PREFIX.encode()+body, 'sha256')):
+            raise ValueError('Integridad Twofish inválida: clave incorrecta o contenido alterado')
+        cipher = Twofish(k)
+        previous = body[:16]
+        output = bytearray()
+        for offset in range(16, len(body), 16):
+            block = body[offset:offset+16]
+            output.extend(a ^ b for a,b in zip(cipher.decrypt(block), previous))
+            previous = block
+        return unpad(bytes(output), 16).decode('utf-8')
 
 
 # ==========================================
@@ -482,9 +516,16 @@ class ElGamalCipher(BaseCipher):
     G = 2
     _pub_cache: dict[int, int] = {}
 
+    @classmethod
+    def _mod_pow(cls, base, exponent):
+        # PyCryptodome utiliza aritmética nativa (GMP cuando está disponible).
+        # Mismo resultado y parámetros; evita la exponenciación Python lenta.
+        from Crypto.Math.Numbers import Integer
+        return int(pow(Integer(base), exponent, Integer(cls.P)))
+
     def _get_pub_y(self, private_x: int) -> int:
         if private_x not in self._pub_cache:
-            self._pub_cache[private_x] = pow(self.G, private_x, self.P)
+            self._pub_cache[private_x] = self._mod_pow(self.G, private_x)
         return self._pub_cache[private_x]
 
     def encrypt(self, plain_text: str, key=None) -> str:
@@ -492,10 +533,12 @@ class ElGamalCipher(BaseCipher):
         pub_y = self._get_pub_y(private_x)
         m_bytes = str(plain_text).encode('utf-8')
         m_int = int.from_bytes(m_bytes, 'big')
+        if m_int >= self.P:
+            raise ValueError('Texto demasiado largo para ElGamal')
 
-        k = random.getrandbits(256) | 1
-        c1 = pow(self.G, k, self.P)
-        s = pow(pub_y, k, self.P)
+        k = __import__("secrets").randbits(256) | 1
+        c1 = self._mod_pow(self.G, k)
+        s = self._mod_pow(pub_y, k)
         c2 = (m_int * s) % self.P
 
         token = f"{c1}:{c2}"
@@ -507,7 +550,7 @@ class ElGamalCipher(BaseCipher):
         c1_str, c2_str = decoded.split(":")
         c1, c2 = int(c1_str), int(c2_str)
 
-        s = pow(c1, priv_x, self.P)
+        s = self._mod_pow(c1, priv_x)
         s_inv = pow(s, -1, self.P)
         m_int = (c2 * s_inv) % self.P
 

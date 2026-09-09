@@ -18,7 +18,10 @@ from psycopg2.extras import RealDictCursor
 from common.bank_router import ConfirmationRequest
 
 
-class PostgreSQLStore:
+from common.relational_bulk import RelationalBulk
+
+
+class PostgreSQLStore(RelationalBulk):
     def __init__(self, dsn: str):
         self._connection = psycopg2.connect(dsn)
         self._lock = threading.Lock()
@@ -51,6 +54,7 @@ class PostgreSQLStore:
                 )
                 """
             )
+            self.migrate_legacy_schema(cursor)
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_cuentas_cliente ON cuentas(cliente_nro)"
             )
@@ -75,72 +79,5 @@ class PostgreSQLStore:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        with self._lock, self._connection:
-            with self._connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE cuentas
-                    SET saldo_bs = %s,
-                        codigo_verificacion = %s,
-                        tipo_cambio = %s,
-                        convertido_at = %s
-                    WHERE nro = %s
-                    """,
-                    (
-                        request.saldo_bs,
-                        request.verification_code.upper(),
-                        request.exchange_rate,
-                        request.converted_at,
-                        request.account_ref,
-                    ),
-                )
-                if cursor.rowcount != 1:
-                    raise KeyError("Cuenta no encontrada")
-
-        return {
-            "account_ref": request.account_ref,
-            "verification_code": request.verification_code.upper(),
-            "status": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        nro = str(record["Nro"])
-        with self._lock, self._connection:
-            with self._connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO clientes (nro, identificacion, nombres, apellidos)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (nro) DO UPDATE SET
-                        identificacion = EXCLUDED.identificacion,
-                        nombres = EXCLUDED.nombres,
-                        apellidos = EXCLUDED.apellidos
-                    """,
-                    (
-                        nro,
-                        record["Identificacion"],
-                        record["Nombres"],
-                        record["Apellidos"],
-                    ),
-                )
-                cursor.execute(
-                    """
-                    INSERT INTO cuentas
-                        (nro, cliente_nro, nro_cuenta, id_banco, saldo)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (nro) DO UPDATE SET
-                        cliente_nro = EXCLUDED.cliente_nro,
-                        nro_cuenta = EXCLUDED.nro_cuenta,
-                        id_banco = EXCLUDED.id_banco,
-                        saldo = EXCLUDED.saldo
-                    """,
-                    (
-                        nro,
-                        nro,
-                        record["NroCuenta"],
-                        int(record["IdBanco"]),
-                        record["Saldo"],
-                    ),
-                )
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])

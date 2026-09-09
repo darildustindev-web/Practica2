@@ -1,59 +1,31 @@
-"""Genera registros cifrados por banco a partir del dataset de la practica.
-
-Uso:
-    python3 scripts/seeder.py dataset.csv --output-dir data/seed
-
-El resultado es un JSONL por banco (bank_01.jsonl ... bank_14.jsonl) con los
-campos sensibles ya cifrados con el algoritmo asignado a cada entidad
-financiera. La insercion en cada motor de BD se mantiene separada (ver
-scripts/load_*.py) para que el seeder no dependa de PostgreSQL, MySQL,
-MongoDB o Neo4j.
-
-Robustez (Integrante 2):
-    - Las filas invalidas (columna faltante, IdBanco fuera de rango, Saldo no
-      numerico, Nro duplicado) NO abortan el proceso: se descartan y se
-      reportan en <output-dir>/rejected_rows.csv junto con el motivo.
-    - Se compara el conteo real de cada banco contra la distribucion oficial
-      del 1% publicada en el enunciado (docx) y se advierte si no coincide,
-      sin inventar ni descartar filas reales por defecto.
-    - Con --target-distribution official_1pct se puede recortar (nunca
-      inventar) cada banco hasta su cuota oficial, de forma reproducible via
-      --seed, para cuando el equipo decida usar exactamente esos totales.
-"""
+"""Carga CSV por lotes acotados; cuarentena de errores y cifrado multiproceso."""
 from __future__ import annotations
-
+from datetime import datetime, timezone
+import uuid
 import argparse
 import csv
 import json
-import random
+import os
+import sqlite3
 import sys
+import tempfile
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
+from time import perf_counter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CRYPTO_ROOT = PROJECT_ROOT / "asfi-service"
-sys.path.insert(0, str(CRYPTO_ROOT))
-
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / 'asfi-service'))
+from shared.money import parse_money
 from crypto.ciphers import ECCCipher
-from crypto.key_manager import CipherFactory, get_bank_key
+from crypto.key_manager import CipherFactory
 
-
-REQUIRED_COLUMNS = {
-    "Nro",
-    "Identificacion",
-    "Nombres",
-    "Apellidos",
-    "NroCuenta",
-    "IdBanco",
-    "Saldo",
-}
-SENSITIVE_COLUMNS = ("Identificacion", "Nombres", "Apellidos", "NroCuenta", "Saldo")
-VALID_BANK_IDS = {str(bank_id) for bank_id in range(1, 15)}
-
-# Distribucion oficial de la muestra del 1% segun el enunciado
-# ("01 - Practica 2 Algoritmos de Encriptacion", tabla de entidades financieras).
+COLUMNS = ('Nro', 'Identificacion', 'Nombres', 'Apellidos', 'NroCuenta', 'IdBanco', 'Saldo')
+REQUIRED_COLUMNS = set(COLUMNS)
+SENSITIVE_COLUMNS = COLUMNS[1:5] + ('Saldo',)
 OFFICIAL_1PCT_DISTRIBUTION: dict[int, int] = {
     1: 22472,
     2: 19975,
@@ -71,246 +43,239 @@ OFFICIAL_1PCT_DISTRIBUTION: dict[int, int] = {
     14: 200,
 }
 
-
 @dataclass
 class LoadResult:
-    valid_rows: list[dict[str, str]] = field(default_factory=list)
-    rejected_rows: list[dict[str, str]] = field(default_factory=list)
+    valid_rows: list = field(default_factory=list)
+    rejected_rows: list = field(default_factory=list)
     total_read: int = 0
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Cifra el dataset y lo separa por banco.")
-    parser.add_argument("dataset", type=Path, help="Ruta al dataset en formato CSV")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/seed"))
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Limita la cantidad de registros leidos, para una prueba local",
-    )
-    parser.add_argument(
-        "--target-distribution",
-        choices=["none", "official_1pct"],
-        default="none",
-        help=(
-            "none (por defecto): usa todas las filas validas tal como vienen "
-            "etiquetadas por IdBanco. official_1pct: recorta cada banco (nunca "
-            "inventa filas) hasta la cuota oficial del 1%% del enunciado."
-        ),
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Semilla para el muestreo reproducible con --target-distribution",
-    )
-    return parser.parse_args()
+def normalize_saldo(value):
+    return format(parse_money(value), 'f')
 
 
-def normalize_row(row: dict[str, str]) -> dict[str, str]:
-    normalized = {str(key).strip(): (value or "").strip() for key, value in row.items()}
-    if "Saldo" in normalized:
-        normalized["Saldo"] = normalize_saldo(normalized["Saldo"])
-    return normalized
-
-
-def normalize_saldo(value: str) -> str:
-    """Normaliza saldos con puntos de miles sin alterar los decimales."""
-    saldo = str(value).strip().replace(" ", "")
-    parts = saldo.split(".")
-    if len(parts) > 2 and parts[0].isdigit() and all(len(part) == 3 and part.isdigit() for part in parts[1:]):
-        return "".join(parts)
-    return saldo
-
-
-def parse_saldo(value: str) -> float | None:
+def parse_saldo(value):
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        return parse_money(value)
+    except ValueError:
         return None
 
 
-def load_rows(dataset: Path, limit: int | None) -> LoadResult:
-    """Lee el CSV y separa filas validas de invalidas sin abortar el proceso."""
-    result = LoadResult()
-    seen_nro: set[str] = set()
-
-    with dataset.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        columns = set(reader.fieldnames or [])
-        missing = REQUIRED_COLUMNS - columns
-        if missing:
-            raise ValueError(f"Faltan columnas requeridas: {', '.join(sorted(missing))}")
-
-        for raw_row in reader:
-            if limit is not None and result.total_read >= limit:
-                break
-            result.total_read += 1
-            row = normalize_row(raw_row)
-
-            reason = validate_row(row, seen_nro)
-            if reason:
-                rejected = dict(row)
-                rejected["_motivo_rechazo"] = reason
-                result.rejected_rows.append(rejected)
-                continue
-
-            seen_nro.add(row["Nro"])
-            result.valid_rows.append(row)
-
-    return result
+def normalize_row(row):
+    return {str(k).strip(): str(v or '').strip() for k, v in row.items() if k is not None}
 
 
-def validate_row(row: dict[str, str], seen_nro: set[str]) -> str | None:
-    """Devuelve el motivo de rechazo, o None si la fila es valida."""
-    nro = row.get("Nro", "")
-    if not nro:
-        return "Nro vacio"
-    if nro in seen_nro:
-        return "Nro duplicado"
-
-    for column in ("Identificacion", "Nombres", "Apellidos", "NroCuenta"):
-        if not row.get(column):
-            return f"campo obligatorio vacio: {column}"
-
-    id_banco = row.get("IdBanco", "")
-    if id_banco not in VALID_BANK_IDS:
-        return f"IdBanco invalido: {id_banco!r}"
-
-    saldo = row.get("Saldo", "")
-    if not saldo or parse_saldo(saldo) is None:
-        return f"Saldo no numerico: {saldo!r}"
-
+def validate_row(row, seen_nro):
+    for column in COLUMNS:
+        value = row.get(column, '')
+        if not value:
+            return f'Campo obligatorio vacío: {column}'
+        if len(value) > 1024 or any(ord(c) < 32 for c in value) or '\ufffd' in value:
+            return f'Campo demasiado largo, con controles o codificación inválida: {column}'
+    if not row['Nro'].isascii() or not row['Nro'].isdigit() or not 0 < int(row['Nro']) <= 9223372036854775807:
+        return 'Nro debe ser entero positivo BIGINT'
+    if row['Nro'] in seen_nro:
+        return 'Nro duplicado'
+    if row['IdBanco'] not in {str(i) for i in range(1,15)}:
+        return 'IdBanco fuera de 1..14'
+    try:
+        parse_money(row['Saldo'])
+    except ValueError as exc:
+        return str(exc)
     return None
 
 
-def apply_target_distribution(
-    rows_by_bank: dict[int, list[dict[str, str]]],
-    mode: str,
-    seed: int,
-) -> tuple[dict[int, list[dict[str, str]]], dict[int, int]]:
-    """Recorta (nunca agranda) cada banco hasta su cuota objetivo.
+def iter_rows(dataset, limit=None):
+    # Deduplicación en disco: la RAM no crece con el número de cuentas.
+    with tempfile.TemporaryDirectory(prefix='asfi-validation-') as temp, \
+            sqlite3.connect(str(Path(temp)/'seen.sqlite')) as db, \
+            Path(dataset).open(encoding='utf-8-sig', errors='replace', newline='') as source:
+        db.execute('CREATE TABLE seen (nro TEXT PRIMARY KEY)')
+        header = source.readline(32769)
+        columns = [c.strip() for c in next(csv.reader([header], strict=True))]
+        if len(header) > 32768 or len(set(columns)) != len(columns) or not REQUIRED_COLUMNS <= set(columns):
+            raise ValueError('Cabecera inválida: columnas requeridas ausentes o duplicadas')
+        number = 1
+        while limit is None or number - 1 < limit:
+            line = source.readline(32769)
+            if not line:
+                break
+            number += 1
+            row = {}
+            try:
+                if len(line) > 32768:
+                    while line and not line.endswith('\n'):
+                        line = source.readline(32769)
+                    raise ValueError('Fila excede 32 KiB')
+                values = next(csv.reader([line], strict=True))
+                if len(values) != len(columns):
+                    raise ValueError('Número de columnas incorrecto')
+                row = normalize_row(dict(zip(columns, values)))
+                reason = validate_row(row, ())
+                if reason:
+                    raise ValueError(reason)
+                row['Nro'] = str(int(row['Nro']))
+                row['Saldo'] = normalize_saldo(row['Saldo'])
+                try:
+                    db.execute('INSERT INTO seen VALUES (?)', (row['Nro'],))
+                except sqlite3.IntegrityError:
+                    raise ValueError('Nro duplicado')
+                if number % 1000 == 0:
+                    db.commit()
+                yield number, row, None
+            except (ValueError, csv.Error, StopIteration) as exc:
+                yield number, row, str(exc) or 'Fila vacía'
 
-    Devuelve las filas resultantes y un diccionario con el faltante
-    (cuota - disponibles) por banco cuando el pool no alcanza la cuota.
-    """
-    if mode == "none":
-        return rows_by_bank, {}
 
-    rng = random.Random(seed)
-    trimmed: dict[int, list[dict[str, str]]] = {}
-    shortfall: dict[int, int] = {}
-    for bank_id, rows in rows_by_bank.items():
-        target = OFFICIAL_1PCT_DISTRIBUTION.get(bank_id)
-        if target is None or len(rows) <= target:
-            trimmed[bank_id] = rows
-            if target is not None and len(rows) < target:
-                shortfall[bank_id] = target - len(rows)
+def load_rows(dataset, limit=None):
+    """Compatibilidad para muestras pequeñas; CLI utiliza iter_rows."""
+    result = LoadResult()
+    for number, row, error in iter_rows(dataset, limit):
+        result.total_read += 1
+        if error:
+            result.rejected_rows.append(dict(row, _linea=number, _motivo_rechazo=error))
         else:
-            trimmed[bank_id] = rng.sample(rows, target)
-    return trimmed, shortfall
+            result.valid_rows.append(row)
+    return result
 
 
-def create_bank_strategies() -> dict[int, tuple[Any, Any]]:
-    strategies = {}
-    for bank_id in range(1, 15):
-        cipher, key = CipherFactory.get_cipher_for_bank(bank_id)
-        if isinstance(cipher, ECCCipher):
-            key = key.public_key()
-        strategies[bank_id] = (cipher, key)
-    return strategies
+_STRATEGIES = {}
 
-
-def encrypt_row(row: dict[str, str], cipher: Any, key: Any) -> dict[str, Any]:
-    encrypted = dict(row)
+def encrypt_row(row, cipher, key):
+    record = dict(row)
     for column in SENSITIVE_COLUMNS:
-        encrypted[column] = cipher.encrypt(row[column], key)
-    encrypted["IdBanco"] = int(row["IdBanco"])
-    return encrypted
+        record[column] = cipher.encrypt(row[column], key)
+    record['IdBanco'] = int(row['IdBanco'])
+    return record
 
 
-def group_by_bank(rows: list[dict[str, str]]) -> dict[int, list[dict[str, str]]]:
-    grouped: dict[int, list[dict[str, str]]] = {bank_id: [] for bank_id in range(1, 15)}
-    for row in rows:
-        grouped[int(row["IdBanco"])].append(row)
-    return grouped
+def encrypt_batch(batch):
+    output = []
+    for number, row in batch:
+        try:
+            bank = int(row['IdBanco'])
+            if bank not in _STRATEGIES:
+                cipher, key = CipherFactory.get_cipher_for_bank(bank)
+                _STRATEGIES[bank] = cipher, key.public_key() if isinstance(cipher, ECCCipher) else key
+            record = encrypt_row(row, *_STRATEGIES[bank])
+            output.append((number, record, None))
+        except Exception as exc:
+            output.append((number, row, f'Cifrado: {type(exc).__name__}: {exc}'))
+    return output
 
 
-def write_bank_files(
-    rows_by_bank: dict[int, list[dict[str, str]]], output_dir: Path
-) -> dict[int, int]:
+def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_distribution='none', seed_value=42):
+    if not 1 <= workers <= 32 or not 1 <= batch_size <= 1000 or (limit is not None and limit < 0):
+        raise ValueError('workers: 1..32; batch-size: 1..1000; limit no negativo')
+    started = perf_counter()
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    strategies = create_bank_strategies()
-    counts = {}
+    # Crear las claves antes de lanzar procesos evita carreras en su creación.
+    for bank in (11,13):
+        CipherFactory.get_cipher_for_bank(bank)
+    metrics = dict(ejecucion_id=uuid.uuid4().hex, inicio=datetime.now(timezone.utc).isoformat(), leidas=0, cifradas=0, rechazadas=0, omitidas_cuota=0, workers=workers, batch_size=batch_size,
+                   bancos={str(i):0 for i in range(1,15)})
+    with tempfile.TemporaryDirectory(prefix='.seed-', dir=output_dir) as tmp, ExitStack() as stack:
+        stage = Path(tmp)
+        files = {i: stack.enter_context((stage/f'bank_{i:02d}.jsonl').open('w', encoding='utf-8')) for i in range(1,15)}
+        rejected = stack.enter_context((stage/'rejected_rows.csv').open('w', encoding='utf-8', newline=''))
+        report = csv.writer(rejected)
+        report.writerow(['linea', 'Nro', 'IdBanco', 'motivo', 'fecha_utc', 'ejecucion_id'])
+        executor = stack.enter_context(ProcessPoolExecutor(max_workers=workers)) if workers > 1 else None
+        pending = deque()
+        def consume(output):
+            for number, record, error in output:
+                if error:
+                    report.writerow([number, record.get('Nro',''), record.get('IdBanco',''), error, datetime.now(timezone.utc).isoformat(), metrics['ejecucion_id']])
+                    metrics['rechazadas'] += 1
+                else:
+                    bank = int(record['IdBanco'])
+                    files[bank].write(json.dumps(record, ensure_ascii=False)+'\n')
+                    metrics['cifradas'] += 1
+                    metrics['bancos'][str(bank)] += 1
+        def batches():
+            batch = []
+            # Muestreo reproducible en disco cuando se requiere la cuota oficial.
+            db = stack.enter_context(sqlite3.connect(str(stage/'sample.sqlite')))
+            db.execute('CREATE TABLE sample (bank INT, rank REAL, line INT, payload TEXT)')
+            import random
+            rng = random.Random(seed_value)
+            for number, row, error in iter_rows(dataset, limit):
+                metrics['leidas'] += 1
+                if error:
+                    report.writerow([number, row.get('Nro',''),row.get('IdBanco',''),error, datetime.now(timezone.utc).isoformat(), metrics['ejecucion_id']])
+                    metrics['rechazadas'] += 1
+                    continue
+                if target_distribution == 'official_1pct':
+                    db.execute('INSERT INTO sample VALUES (?,?,?,?)', (int(row['IdBanco']),rng.random(),number,json.dumps(row)))
+                else:
+                    batch.append((number,row))
+                    if len(batch) == batch_size:
+                        yield batch
+                        batch = []
+            if target_distribution == 'official_1pct':
+                db.execute('CREATE INDEX selection ON sample(bank,rank)')
+                selected = 0
+                for bank, quota in OFFICIAL_1PCT_DISTRIBUTION.items():
+                    for number, payload in db.execute('SELECT line,payload FROM sample WHERE bank=? ORDER BY rank LIMIT ?', (bank,quota)):
+                        batch.append((number,json.loads(payload)))
+                        selected += 1
+                        if len(batch) == batch_size:
+                            yield batch
+                            batch = []
+                metrics['omitidas_cuota'] = metrics['leidas'] - metrics['rechazadas'] - selected
+            if batch:
+                yield batch
+        for batch in batches():
+            if executor:
+                pending.append(executor.submit(encrypt_batch,batch))
+                if len(pending) >= workers * 2:
+                    consume(pending.popleft().result())
+            else:
+                consume(encrypt_batch(batch))
+        while pending:
+            consume(pending.popleft().result())
+        for f in [*files.values(),rejected]:
+            f.flush()
+            os.fsync(f.fileno())
+        import resource
+        metrics['memoria_principal_max_mib'] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2)
+        metrics['segundos'] = round(perf_counter()-started,4)
+        metrics['registros_por_segundo'] = round(metrics['leidas']/max(metrics['segundos'],0.0001),2)
+        (stage/'metrics.json').write_text(json.dumps(metrics,indent=2),encoding='utf-8')
+        for name in [*(f'bank_{i:02d}.jsonl' for i in range(1,15)), 'rejected_rows.csv', 'metrics.json']:
+            os.replace(stage/name, output_dir/name)
+    return metrics
 
-    for bank_id in range(1, 15):
-        rows = rows_by_bank.get(bank_id, [])
-        cipher, key = strategies[bank_id]
-        path = output_dir / f"bank_{bank_id:02d}.jsonl"
-        with path.open("w", encoding="utf-8") as file:
-            for row in rows:
-                record = encrypt_row(row, cipher, key)
-                json.dump(record, file, ensure_ascii=False)
-                file.write("\n")
-        counts[bank_id] = len(rows)
 
-    return counts
-
-
-def write_rejected_report(rejected_rows: list[dict[str, str]], output_dir: Path) -> Path | None:
-    if not rejected_rows:
-        return None
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / "rejected_rows.csv"
-    fieldnames = sorted({key for row in rejected_rows for key in row.keys()})
-    # Aseguramos que el motivo salga siempre al final para facilitar la lectura.
-    if "_motivo_rechazo" in fieldnames:
-        fieldnames.remove("_motivo_rechazo")
-        fieldnames.append("_motivo_rechazo")
-    with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rejected_rows)
-    return path
+def seed(dataset, output_dir, **kwargs):
+    import fcntl
+    output_dir=Path(output_dir)
+    output_dir.mkdir(parents=True,exist_ok=True)
+    with (output_dir/'.seed.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError('Otra carga está usando el directorio de salida') from exc
+        return _seed(dataset,output_dir,**kwargs)
 
 
-def main() -> None:
-    args = parse_args()
-    result = load_rows(args.dataset, args.limit)
-    rows_by_bank = group_by_bank(result.valid_rows)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('dataset',type=Path)
+    parser.add_argument('--output-dir',type=Path,default=Path('data/seed'))
+    parser.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1))
+    parser.add_argument('--batch-size',type=int,default=500)
+    parser.add_argument('--limit',type=int)
+    parser.add_argument('--target-distribution',choices=['none','official_1pct'],default='none')
+    parser.add_argument('--seed',type=int,default=42)
+    args=parser.parse_args()
+    try:
+        metrics=seed(args.dataset,args.output_dir,workers=args.workers,batch_size=args.batch_size,limit=args.limit,
+                     target_distribution=args.target_distribution,seed_value=args.seed)
+    except (OSError,ValueError,csv.Error) as exc:
+        parser.exit(1,f'Carga detenida de forma controlada: {exc}\n')
+    print(json.dumps(metrics,ensure_ascii=False,indent=2))
 
-    rows_by_bank, shortfall = apply_target_distribution(
-        rows_by_bank, args.target_distribution, args.seed
-    )
-
-    counts = write_bank_files(rows_by_bank, args.output_dir)
-    rejected_path = write_rejected_report(result.rejected_rows, args.output_dir)
-
-    print(f"Filas leidas: {result.total_read}")
-    print(f"Filas validas: {len(result.valid_rows)}")
-    print(f"Filas rechazadas: {len(result.rejected_rows)}"
-          + (f" (detalle en {rejected_path})" if rejected_path else ""))
-    print(f"Modo de distribucion: {args.target_distribution}")
-    print()
-    print(f"{'Banco':<4} {'Nombre':<38} {'Cifrado':<10} {'Cargados':>9} {'Oficial 1%':>11} {'Diff':>7}")
-    for bank_id in range(1, 15):
-        bank = get_bank_key(bank_id)
-        loaded = counts.get(bank_id, 0)
-        official = OFFICIAL_1PCT_DISTRIBUTION.get(bank_id, 0)
-        diff = loaded - official
-        flag = "  <-- faltan filas" if bank_id in shortfall else ""
-        print(
-            f"{bank_id:<4} {bank['name']:<38} {bank['type']:<10} "
-            f"{loaded:>9} {official:>11} {diff:>7}{flag}"
-        )
-
-    if any(bank_id <= 7 for bank_id, count in counts.items() if count == 0):
-        print(
-            "\nAdvertencia: al menos un banco relacional (1-7) quedo sin "
-            "registros. Revisa el dataset de origen."
-        )
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,0 +1,145 @@
+{
+  "segundos": 8.1655,
+  "bancos": [
+    {
+      "banco_id": 3,
+      "ejecucion_id": "af2b0a1823c54acbaa9bb12d9c5b66d7",
+      "inicio": "2026-09-09T11:44:11.831597+00:00",
+      "leidas": 8767,
+      "cargadas": 8767,
+      "rechazadas": 0,
+      "segundos": 0.9962,
+      "registros_por_segundo": 8800.44
+    },
+    {
+      "banco_id": 1,
+      "ejecucion_id": "413b0e7c91bf41eeafa54ad69492854c",
+      "inicio": "2026-09-09T11:44:11.862478+00:00",
+      "leidas": 8721,
+      "cargadas": 8721,
+      "rechazadas": 0,
+      "segundos": 0.9729,
+      "registros_por_segundo": 8963.92
+    },
+    {
+      "banco_id": 2,
+      "ejecucion_id": "65f0c9587c4d41d280764bb3ee092baf",
+      "inicio": "2026-09-09T11:44:11.915537+00:00",
+      "leidas": 8830,
+      "cargadas": 8830,
+      "rechazadas": 0,
+      "segundos": 1.0254,
+      "registros_por_segundo": 8611.27
+    },
+    {
+      "banco_id": 4,
+      "ejecucion_id": "4d087d11be05499182d4b4bfb0e76c9b",
+      "inicio": "2026-09-09T11:44:11.878839+00:00",
+      "leidas": 8885,
+      "cargadas": 8885,
+      "rechazadas": 0,
+      "segundos": 1.2634,
+      "registros_por_segundo": 7032.61
+    },
+    {
+      "banco_id": 6,
+      "ejecucion_id": "48417fa8ec2a41f6b50813e65b53ea40",
+      "inicio": "2026-09-09T11:44:12.859766+00:00",
+      "leidas": 8793,
+      "cargadas": 8793,
+      "rechazadas": 0,
+      "segundos": 0.8748,
+      "registros_por_segundo": 10051.44
+    },
+    {
+      "banco_id": 7,
+      "ejecucion_id": "331ba1784d0f43d5a8caf1d8c98926a7",
+      "inicio": "2026-09-09T11:44:12.987887+00:00",
+      "leidas": 8872,
+      "cargadas": 8872,
+      "rechazadas": 0,
+      "segundos": 1.0025,
+      "registros_por_segundo": 8849.88
+    },
+    {
+      "banco_id": 5,
+      "ejecucion_id": "415cc9a7dcb84b5bb586d94362af8a4a",
+      "inicio": "2026-09-09T11:44:12.922549+00:00",
+      "leidas": 8785,
+      "cargadas": 8785,
+      "rechazadas": 0,
+      "segundos": 1.3103,
+      "registros_por_segundo": 6704.57
+    },
+    {
+      "banco_id": 8,
+      "ejecucion_id": "c27c142013034f3ba324014cfdd31b85",
+      "inicio": "2026-09-09T11:44:13.170362+00:00",
+      "leidas": 8877,
+      "cargadas": 8877,
+      "rechazadas": 0,
+      "segundos": 1.1498,
+      "registros_por_segundo": 7720.47
+    },
+    {
+      "banco_id": 9,
+      "ejecucion_id": "d4371a33fb5b43c49dd305bc1c0b6ce6",
+      "inicio": "2026-09-09T11:44:13.774245+00:00",
+      "leidas": 8817,
+      "cargadas": 8817,
+      "rechazadas": 0,
+      "segundos": 1.2552,
+      "registros_por_segundo": 7024.38
+    },
+    {
+      "banco_id": 10,
+      "ejecucion_id": "ee3186939a3746b998a576399ed7c627",
+      "inicio": "2026-09-09T11:44:14.011192+00:00",
+      "leidas": 8779,
+      "cargadas": 8779,
+      "rechazadas": 0,
+      "segundos": 1.0508,
+      "registros_por_segundo": 8354.59
+    },
+    {
+      "banco_id": 11,
+      "ejecucion_id": "9dd3fc0fcbd5429c8668b48d57426ba0",
+      "inicio": "2026-09-09T11:44:14.287457+00:00",
+      "leidas": 8910,
+      "cargadas": 8910,
+      "rechazadas": 0,
+      "segundos": 1.4116,
+      "registros_por_segundo": 6311.99
+    },
+    {
+      "banco_id": 14,
+      "ejecucion_id": "594e3a30204f470f84c417f2df01bbc0",
+      "inicio": "2026-09-09T11:44:15.083053+00:00",
+      "leidas": 8865,
+      "cargadas": 8865,
+      "rechazadas": 0,
+      "segundos": 1.0712,
+      "registros_por_segundo": 8275.77
+    },
+    {
+      "banco_id": 12,
+      "ejecucion_id": "3c0f019748aa4de5a5b2a70403bf7597",
+      "inicio": "2026-09-09T11:44:14.376456+00:00",
+      "leidas": 8982,
+      "cargadas": 8982,
+      "rechazadas": 0,
+      "segundos": 2.1132,
+      "registros_por_segundo": 4250.43
+    },
+    {
+      "banco_id": 13,
+      "ejecucion_id": "cae6546fb3c840779aee9c2a0ad29463",
+      "inicio": "2026-09-09T11:44:15.143937+00:00",
+      "leidas": 8902,
+      "cargadas": 8902,
+      "rechazadas": 0,
+      "segundos": 4.8497,
+      "registros_por_segundo": 1835.58
+    }
+  ]
+}

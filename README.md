@@ -1,5 +1,12 @@
 # 🏦 Práctica 2: Plataforma Distribuida de Conversión Monetaria Interbancaria (ASFI - BCB)
 
+> **Actualización de robustez y rendimiento:** carga por lotes con procesos e hilos,
+> confirmaciones recuperables, cotización por lote y consolidación PostgreSQL.
+> Consultar [la guía vigente y los benchmarks](docs/ROBUSTEZ_Y_RENDIMIENTO.md)
+> para los comandos actuales, la política de carga y sus límites. Los resultados
+> históricos y pendientes que aparecen más abajo corresponden a versiones anteriores.
+
+
 Bienvenido al repositorio oficial del proyecto **Práctica 2 - Sistemas Distribuidos**. Este proyecto simula un entorno real de interoperabilidad financiera distribuida bajo restricciones monetarias en Bolivia, donde la **ASFI** procesa la conversión obligatoria de cuentas bancarias en dólares estadounidenses (USD) a bolivianos (Bs.) utilizando la cotización fluctuante del **Banco Central de Bolivia (BCB)**.
 
 ---

@@ -1,0 +1,6 @@
+linea,Nro,IdBanco,motivo,fecha_utc,ejecucion_id
+18,263,14,Campo obligatorio vacío: Apellidos,2026-09-09T11:42:40.646283+00:00,a4a1c2ead66e45f4a3d40141ba5557c5
+19,264,14,Campo obligatorio vacío: Nombres,2026-09-09T11:42:40.646306+00:00,a4a1c2ead66e45f4a3d40141ba5557c5
+21,270,14,Campo obligatorio vacío: Nombres,2026-09-09T11:42:40.646340+00:00,a4a1c2ead66e45f4a3d40141ba5557c5
+114317,113044,2,Campo obligatorio vacío: Identificacion,2026-09-09T11:43:07.150268+00:00,a4a1c2ead66e45f4a3d40141ba5557c5
+123791,69964,,Campo obligatorio vacío: IdBanco,2026-09-09T11:43:07.471613+00:00,a4a1c2ead66e45f4a3d40141ba5557c5

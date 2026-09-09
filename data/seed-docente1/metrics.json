@@ -1,0 +1,29 @@
+{
+  "ejecucion_id": "a4a1c2ead66e45f4a3d40141ba5557c5",
+  "inicio": "2026-09-09T11:42:40.637323+00:00",
+  "leidas": 123790,
+  "cifradas": 123785,
+  "rechazadas": 5,
+  "omitidas_cuota": 0,
+  "workers": 4,
+  "batch_size": 500,
+  "bancos": {
+    "1": 8721,
+    "2": 8830,
+    "3": 8767,
+    "4": 8885,
+    "5": 8785,
+    "6": 8793,
+    "7": 8872,
+    "8": 8877,
+    "9": 8817,
+    "10": 8779,
+    "11": 8910,
+    "12": 8982,
+    "13": 8902,
+    "14": 8865
+  },
+  "memoria_principal_max_mib": 50.53,
+  "segundos": 26.9691,
+  "registros_por_segundo": 4590.07
+}

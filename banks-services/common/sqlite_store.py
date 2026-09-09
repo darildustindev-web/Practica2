@@ -17,7 +17,10 @@ from typing import Any
 from common.bank_router import ConfirmationRequest
 
 
-class SQLiteStore:
+from common.relational_bulk import RelationalBulk
+
+
+class SQLiteStore(RelationalBulk):
     def __init__(self, database_url: str):
         prefix = "sqlite:///"
         if not database_url.startswith(prefix):
@@ -58,6 +61,9 @@ class SQLiteStore:
                 )
                 """
             )
+            cursor = self._connection.cursor()
+            self.migrate_legacy_schema(cursor)
+            cursor.close()
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_cuentas_cliente ON cuentas(cliente_nro)"
             )
@@ -82,66 +88,5 @@ class SQLiteStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        with self._lock, self._connection:
-            cursor = self._connection.execute(
-                """
-                UPDATE cuentas
-                SET saldo_bs = ?, codigo_verificacion = ?,
-                    tipo_cambio = ?, convertido_at = ?
-                WHERE nro = ?
-                """,
-                (
-                    request.saldo_bs,
-                    request.verification_code.upper(),
-                    request.exchange_rate,
-                    request.converted_at.isoformat(),
-                    request.account_ref,
-                ),
-            )
-            if cursor.rowcount != 1:
-                raise KeyError("Cuenta no encontrada")
-        return {
-            "account_ref": request.account_ref,
-            "verification_code": request.verification_code.upper(),
-            "status": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        nro = str(record["Nro"])
-        with self._lock, self._connection:
-            self._connection.execute(
-                """
-                INSERT INTO clientes (nro, identificacion, nombres, apellidos)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(nro) DO UPDATE SET
-                    identificacion = excluded.identificacion,
-                    nombres = excluded.nombres,
-                    apellidos = excluded.apellidos
-                """,
-                (
-                    nro,
-                    record["Identificacion"],
-                    record["Nombres"],
-                    record["Apellidos"],
-                ),
-            )
-            self._connection.execute(
-                """
-                INSERT INTO cuentas (nro, cliente_nro, nro_cuenta, id_banco, saldo)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(nro) DO UPDATE SET
-                    cliente_nro = excluded.cliente_nro,
-                    nro_cuenta = excluded.nro_cuenta,
-                    id_banco = excluded.id_banco,
-                    saldo = excluded.saldo
-                """,
-                (
-                    nro,
-                    nro,
-                    record["NroCuenta"],
-                    int(record["IdBanco"]),
-                    record["Saldo"],
-                ),
-            )
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])

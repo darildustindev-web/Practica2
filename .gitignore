@@ -7,3 +7,10 @@ data/keys/
 data/*.csv
 data/*.sqlite
 .vscode/
+
+# Estado local y reportes de las cargas
+*.lock
+*.sqlite-wal
+*.sqlite-shm
+*.load-rejected.jsonl
+data/service-logs/

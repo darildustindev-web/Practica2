@@ -20,7 +20,9 @@ logger = logging.getLogger("bank13-neo4j")
 HEX_CODE_REGEX = re.compile(r"^[0-9A-Fa-f]{8}$")
 
 
-class Neo4jStore:
+from common.nosql_bulk import NoSQLBulk
+
+class Neo4jStore(NoSQLBulk):
     """Adaptador de base de datos orientada a grafos en Neo4j para el Banco BDP."""
 
     def __init__(self, url: str | None = None, auto_constraints: bool = True):
@@ -71,78 +73,48 @@ class Neo4jStore:
     # =========================================================================
     # Inserción / Actualización Idempotente (Poblamiento)
     # =========================================================================
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        """Inserta o actualiza un registro en el grafo con MERGE idempotente.
-        
-        Crea (:Cliente), (:Cuenta) y la relación (:Cliente)-[:TIENE_CUENTA]->(:Cuenta).
-        """
-        cuenta_id = str(record.get("Nro") or record.get("CuentaId") or record.get("cuenta_id", "")).strip()
-        identificacion = str(record.get("Identificacion") or record.get("identificacion", "")).strip()
-        nombres = str(record.get("Nombres") or record.get("nombres", "")).strip()
-        apellidos = str(record.get("Apellidos") or record.get("apellidos", "")).strip()
-        nro_cuenta = str(record.get("NroCuenta") or record.get("nro_cuenta", "")).strip()
-        id_banco = int(record.get("IdBanco") or record.get("BancoId") or record.get("banco_id", 13))
-        saldo = str(record.get("Saldo") or record.get("SaldoUSD") or record.get("saldo_usd", "")).strip()
-        estado = str(record.get("Estado") or record.get("estado", "PENDIENTE")).strip()
-
+    def upsert_accounts_batch(self, records):
+        rows = [dict(cuenta_id=str(r['Nro']), identificacion=r['Identificacion'], nombres=r['Nombres'],
+                     apellidos=r['Apellidos'],nro_cuenta=r['NroCuenta'],id_banco=int(r['IdBanco']),
+                     saldo=r['Saldo'],estado='PENDIENTE') for r in records]
         query = """
-        MERGE (cliente:Cliente {clienteId: $identificacion})
+        UNWIND $rows AS row
+        MERGE (cuenta:Cuenta {cuentaId: row.cuenta_id})
         ON CREATE SET
-            cliente.identificacion = $identificacion,
-            cliente.nombres = $nombres,
-            cliente.apellidos = $apellidos
-        ON MATCH SET
-            cliente.nombres = $nombres,
-            cliente.apellidos = $apellidos
-
-        MERGE (cuenta:Cuenta {cuentaId: $cuenta_id})
-        ON CREATE SET
-            cuenta.nro = $cuenta_id,
-            cuenta.cuentaId = $cuenta_id,
-            cuenta.bancoId = $id_banco,
-            cuenta.id_banco = $id_banco,
-            cuenta.saldo = $saldo,
-            cuenta.saldoUSD = $saldo,
+            cuenta.nro = row.cuenta_id,
+            cuenta.cuentaId = row.cuenta_id,
+            cuenta.bancoId = row.id_banco,
+            cuenta.id_banco = row.id_banco,
+            cuenta.saldo = row.saldo,
+            cuenta.saldoUSD = row.saldo,
             cuenta.saldoBs = null,
             cuenta.saldo_bs = null,
-            cuenta.estado = $estado,
+            cuenta.estado = row.estado,
             cuenta.codigoVerificacion = null,
             cuenta.codigo_verificacion = null,
             cuenta.fechaConversion = null,
             cuenta.convertido_at = null,
             cuenta.tipoCambio = null,
             cuenta.tipo_cambio = null,
-            cuenta.nroCuenta = $nro_cuenta,
-            cuenta.nro_cuenta = $nro_cuenta,
-            cuenta.identificacion = $identificacion,
-            cuenta.nombres = $nombres,
-            cuenta.apellidos = $apellidos
-        ON MATCH SET
-            cuenta.saldo = $saldo,
-            cuenta.saldoUSD = $saldo,
-            cuenta.nroCuenta = $nro_cuenta,
-            cuenta.nro_cuenta = $nro_cuenta
+            cuenta.nroCuenta = row.nro_cuenta,
+            cuenta.nro_cuenta = row.nro_cuenta,
+            cuenta.identificacion = row.identificacion,
+            cuenta.nombres = row.nombres,
+            cuenta.apellidos = row.apellidos
 
+        WITH cuenta
+        MERGE (cliente:Cliente {clienteId: cuenta.identificacion})
+        ON CREATE SET cliente.identificacion=cuenta.identificacion,
+                      cliente.nombres=cuenta.nombres, cliente.apellidos=cuenta.apellidos
         MERGE (cliente)-[:TIENE_CUENTA]->(cuenta)
         """
         with self._driver.session() as session:
-            session.run(
-                query,
-                cuenta_id=cuenta_id,
-                identificacion=identificacion,
-                nombres=nombres,
-                apellidos=apellidos,
-                nro_cuenta=nro_cuenta,
-                id_banco=id_banco,
-                saldo=saldo,
-                estado=estado,
-            ).consume()
+            session.execute_write(lambda tx: tx.run(query, rows=rows).consume())
 
-    # =========================================================================
-    # 8 Consultas Cypher Parametrizadas Requeridas
-    # =========================================================================
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])
 
-    # Consulta A: Obtener todos los clientes
+
     def get_all_clients(self) -> list[dict[str, Any]]:
         query = """
         MATCH (c:Cliente)
@@ -228,82 +200,18 @@ class Neo4jStore:
             return [record.data() for record in session.run(query)]
 
     # Consulta H: Actualizar los datos de una cuenta (Confirmación de Transacción)
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        """Confirma una transacción en la cuenta bancaria aplicando reglas de negocio estrictas."""
-        code = request.verification_code.strip().upper()
 
-        # Validación 1: Exactamente 8 caracteres hexadecimales
-        if not HEX_CODE_REGEX.fullmatch(code):
-            raise ValueError(
-                f"El código de verificación '{request.verification_code}' debe contener "
-                f"exactamente 8 caracteres hexadecimales (0-9, A-F)."
-            )
-
-        ref = str(request.account_ref).strip()
-
-        # Buscar la cuenta actual
-        existing = self.get_account_by_id(ref)
-        if not existing:
-            raise KeyError(f"Cuenta no encontrada: {ref}")
-
-        # Validación 2: Idempotencia y protección anti-replay
-        current_state = str(existing.get("estado", "")).upper()
-        current_code = str(existing.get("codigoVerificacion") or existing.get("codigo_verificacion") or "").upper()
-
-        if current_state == "CONFIRMADA":
-            if current_code == code:
-                # Reintento idéntico: respuesta idempotente exitosa (200 OK)
-                return {
-                    "account_ref": ref,
-                    "verification_code": code,
-                    "status": "CONFIRMADA",
-                    "converted_at": existing.get("fechaConversion") or request.converted_at,
-                    "message": "Transacción confirmada previamente (idempotente)",
-                }
-            # Conflicto anti-replay: intento de reutilización con código diferente (409 Conflict)
-            raise ValueError(
-                f"Conflicto anti-replay: La cuenta '{ref}' ya fue confirmada previamente "
-                f"con un código diferente ('{current_code}'). Transacción rechazada."
-            )
-
-        # Actualización de la cuenta
-        query_update = """
-        MATCH (cu:Cuenta)
-        WHERE cu.cuentaId = $account_ref OR cu.nro = $account_ref
-        SET cu.saldoBs = $saldo_bs,
-            cu.saldo_bs = $saldo_bs,
-            cu.codigoVerificacion = $codigo,
-            cu.codigo_verificacion = $codigo,
-            cu.tipoCambio = $tipo_cambio,
-            cu.tipo_cambio = $tipo_cambio,
-            cu.fechaConversion = $convertido_at,
-            cu.convertido_at = $convertido_at,
-            cu.estado = 'CONFIRMADA'
-        RETURN cu.cuentaId AS cuentaId, cu.estado AS estado
+    def encrypted_accounts_after(self, after, limit):
+        query="""
+        MATCH (cu:Cuenta) WHERE cu.cuentaId > $after
+        RETURN cu.cuentaId AS Nro,cu.identificacion AS Identificacion,
+               cu.nombres AS Nombres,cu.apellidos AS Apellidos,cu.nro_cuenta AS NroCuenta,
+               cu.id_banco AS IdBanco,cu.saldo AS Saldo
+        ORDER BY cu.cuentaId LIMIT $limit
         """
         with self._driver.session() as session:
-            result = session.run(
-                query_update,
-                account_ref=ref,
-                saldo_bs=str(request.saldo_bs),
-                codigo=code,
-                tipo_cambio=str(request.exchange_rate),
-                convertido_at=request.converted_at.isoformat(),
-            ).single()
+            return session.run(query,after=after,limit=limit).data()
 
-        if not result:
-            raise KeyError(f"No se pudo actualizar la cuenta: {ref}")
-
-        return {
-            "account_ref": ref,
-            "verification_code": code,
-            "status": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    # =========================================================================
-    # Métodos Estándar para Integración con Router y ASFI
-    # =========================================================================
     def encrypted_accounts(self, offset: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         """Devuelve las cuentas formateadas para el router bancario y el barrido de ASFI."""
         query = """

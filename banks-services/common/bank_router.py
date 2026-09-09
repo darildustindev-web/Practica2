@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from shared.money import parse_money
+from shared.conversion import newer_conversion
 
 BANK_METADATA = {
     1: {"name": "Banco Unión S.A.", "algorithm": "César"},
@@ -30,11 +32,13 @@ BANK_METADATA = {
 
 
 class ConfirmationRequest(BaseModel):
+    model_config = ConfigDict(validate_default=True)
+    revalue: bool = False
     account_ref: str = Field(default="", description="Referencia interna Nro / CuentaId del dataset")
     cuenta_id: str | None = Field(default=None, description="Alias para account_ref")
     verification_code: str = Field(default="", description="Código de verificación hexadecimal de 8 caracteres (0-9, A-F)")
     codigo_verificacion: str | None = Field(default=None, description="Alias para verification_code")
-    saldo_bs: str = Field(default="0.0000", description="Saldo convertido recibido desde ASFI")
+    saldo_bs: str = Field(..., description="Saldo convertido recibido desde ASFI")
     exchange_rate: str = Field(default="6.9600", description="Tipo de cambio aplicado")
     tipo_cambio: str | None = Field(default=None, description="Alias para exchange_rate")
     converted_at: datetime | None = Field(default=None, description="Fecha/hora de conversión")
@@ -44,6 +48,7 @@ class ConfirmationRequest(BaseModel):
     @classmethod
     def normalize_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            data = dict(data)
             ref = (
                 data.get("account_ref")
                 or data.get("cuenta_id")
@@ -72,9 +77,20 @@ class ConfirmationRequest(BaseModel):
                 or data.get("fecha_conversion")
                 or data.get("FechaConversion")
             )
-            if conv is None:
-                data["converted_at"] = datetime.now(timezone.utc)
+            data["converted_at"] = conv if conv is not None else datetime.now(timezone.utc)
         return data
+
+    @field_validator("saldo_bs", "exchange_rate")
+    @classmethod
+    def validate_money(cls, value, info):
+        return format(parse_money(value, rate=info.field_name == 'exchange_rate'), 'f')
+
+    @field_validator("converted_at")
+    @classmethod
+    def validate_timestamp(cls, value):
+        if value is None or value.tzinfo is None:
+            raise ValueError('converted_at requiere zona horaria')
+        return value.astimezone(timezone.utc)
 
     @field_validator("verification_code")
     @classmethod
@@ -151,8 +167,11 @@ class JsonBankStore:
                 raise KeyError(f"Cuenta '{request.account_ref}' no encontrada")
 
             existing_code = account.get("_verification_code")
-            if existing_code:
+            if existing_code and not newer_conversion(request, existing_code, account.get('_converted_at')):
                 if existing_code == request.verification_code.upper():
+                    if (parse_money(account['_saldo_bs']) != parse_money(request.saldo_bs) or
+                            parse_money(account['_exchange_rate']) != parse_money(request.exchange_rate)):
+                        raise ValueError('Reintento con importe o tasa diferentes')
                     return {
                         "account_ref": request.account_ref,
                         "cuenta_id": request.account_ref,
@@ -208,9 +227,9 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
         except ConnectionError as error:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
 
-    def _get_accounts_response(offset: int, limit: int) -> dict[str, Any]:
+    def _get_accounts_response(offset: int, limit: int, after: str | None = None) -> dict[str, Any]:
         try:
-            cuentas = store.encrypted_accounts(offset, limit)
+            cuentas = store.encrypted_accounts_after(after, limit) if after is not None and hasattr(store, 'encrypted_accounts_after') else store.encrypted_accounts(offset, limit)
             total = store.count_accounts() if hasattr(store, "count_accounts") else len(cuentas)
             return {
                 "banco_id": bank_id,
@@ -220,6 +239,7 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
                 "limit": limit,
                 "total": total,
                 "cuentas": cuentas,
+                "next_cursor": str(cuentas[-1]["Nro"]) if cuentas and hasattr(store, "encrypted_accounts_after") else None,
             }
         except ConnectionError as error:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
@@ -237,8 +257,9 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
     def get_encrypted_accounts(
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=100, ge=1, le=1000),
+        after: str | None = Query(default=None, max_length=255),
     ) -> dict[str, Any]:
-        return _get_accounts_response(offset, limit)
+        return _get_accounts_response(offset, limit, after)
 
     # Endpoint para consultar una cuenta individual
     @router.get("/cuentas/{account_ref}")
@@ -266,7 +287,7 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
                         or account.get("convertido_at")
                         or account.get("FechaConversion")
                     ),
-                    "TipoCambio": account.get("tipoCambio") or account.get("tipo_cambio"),
+                    "TipoCambio": account.get("tipoCambio") or account.get("tipo_cambio") or account.get("TipoCambio"),
                     "NroCuenta": account.get("nroCuenta") or account.get("nro_cuenta") or account.get("NroCuenta"),
                     "Identificacion": (
                         account.get("identificacion")
@@ -344,8 +365,33 @@ def create_bank_router(store: BankStore, bank_id: int) -> APIRouter:
 
     # Alias compatible con ASFI: POST /api/banco/cuentas/confirmar
     @router.post("/cuentas/confirmar")
-    def confirm_account_alias(request: ConfirmationRequest) -> dict[str, Any]:
-        return _handle_confirm(request)
+    def confirm_account_alias(request: ConfirmationRequest | list[Any]) -> dict[str, Any]:
+        if isinstance(request, ConfirmationRequest):
+            return _handle_confirm(request)
+        if len(request) > 1000:
+            raise HTTPException(status_code=413, detail="Máximo 1000 confirmaciones por lote")
+        valid, results = [], []
+        for item in request:
+            try:
+                valid.append(ConfirmationRequest.model_validate(item))
+            except ValueError as exc:
+                results.append(dict(account_ref=str(item.get('account_ref','')) if isinstance(item,dict) else '',status='ERROR',detail=str(exc)))
+        if hasattr(store, 'confirm_batch'):
+            results.extend(store.confirm_batch(valid))
+        else:
+            for item in valid:
+                try:
+                    receipt = store.confirm(item)
+                    # Todo reintento debe coincidir también en importe y tasa.
+                    amount = receipt.get('saldo_bs', item.saldo_bs)
+                    rate = receipt.get('exchange_rate',receipt.get('tipo_cambio',item.exchange_rate))
+                    if parse_money(amount) != parse_money(item.saldo_bs) or parse_money(rate) != parse_money(item.exchange_rate):
+                        raise ValueError('El recibo previo tiene importe o tasa diferentes')
+                    results.append(dict(receipt, account_ref=item.account_ref, status='CONFIRMADA',
+                                        verification_code=item.verification_code,saldo_bs=str(amount),exchange_rate=str(rate)))
+                except (KeyError, ValueError) as exc:
+                    results.append(dict(account_ref=item.account_ref,status='ERROR',detail=str(exc)))
+        return {'resultados': results}
 
     # Endpoint de información / metadatos del banco
     @router.get("/info")

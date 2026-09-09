@@ -1,0 +1,358 @@
+{
+  "seeder": {
+    "leidas": 123790,
+    "cifradas": 123785,
+    "rechazadas": 5,
+    "omitidas_cuota": 0,
+    "workers": 4,
+    "batch_size": 500,
+    "bancos": {
+      "1": 8721,
+      "2": 8830,
+      "3": 8767,
+      "4": 8885,
+      "5": 8785,
+      "6": 8793,
+      "7": 8872,
+      "8": 8877,
+      "9": 8817,
+      "10": 8779,
+      "11": 8910,
+      "12": 8982,
+      "13": 8902,
+      "14": 8865
+    },
+    "segundos": 27.8191,
+    "registros_por_segundo": 4449.82
+  },
+  "carga_sqlite_segundos": 2.4626,
+  "conversion": {
+    "status": "PROCESADO",
+    "transacciones": 123785,
+    "confirmadas": 123785,
+    "ya_confirmadas": 0,
+    "errores": 0,
+    "segundos": 38.9397,
+    "bancos": [
+      {
+        "banco_id": 1,
+        "leidas": 8721,
+        "confirmadas": 8721,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.617,
+        "segundos": 37.3857,
+        "registros_por_segundo": 233.27
+      },
+      {
+        "banco_id": 2,
+        "leidas": 8830,
+        "confirmadas": 8830,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.8815,
+        "segundos": 35.8047,
+        "registros_por_segundo": 246.62
+      },
+      {
+        "banco_id": 3,
+        "leidas": 8767,
+        "confirmadas": 8767,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.7379,
+        "segundos": 35.818,
+        "registros_por_segundo": 244.77
+      },
+      {
+        "banco_id": 4,
+        "leidas": 8885,
+        "confirmadas": 8885,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.665,
+        "segundos": 37.3849,
+        "registros_por_segundo": 237.66
+      },
+      {
+        "banco_id": 5,
+        "leidas": 8785,
+        "confirmadas": 8785,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.6032,
+        "segundos": 37.399,
+        "registros_por_segundo": 234.9
+      },
+      {
+        "banco_id": 6,
+        "leidas": 8793,
+        "confirmadas": 8793,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.7406,
+        "segundos": 35.9334,
+        "registros_por_segundo": 244.7
+      },
+      {
+        "banco_id": 7,
+        "leidas": 8872,
+        "confirmadas": 8872,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.6446,
+        "segundos": 37.3307,
+        "registros_por_segundo": 237.66
+      },
+      {
+        "banco_id": 8,
+        "leidas": 8877,
+        "confirmadas": 8877,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.7258,
+        "segundos": 35.8129,
+        "registros_por_segundo": 247.87
+      },
+      {
+        "banco_id": 9,
+        "leidas": 8817,
+        "confirmadas": 8817,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.9759,
+        "segundos": 35.7412,
+        "registros_por_segundo": 246.69
+      },
+      {
+        "banco_id": 10,
+        "leidas": 8779,
+        "confirmadas": 8779,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 2.0455,
+        "segundos": 35.7383,
+        "registros_por_segundo": 245.65
+      },
+      {
+        "banco_id": 11,
+        "leidas": 8910,
+        "confirmadas": 8910,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.8285,
+        "segundos": 38.8064,
+        "registros_por_segundo": 229.6
+      },
+      {
+        "banco_id": 12,
+        "leidas": 8982,
+        "confirmadas": 8982,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.9716,
+        "segundos": 37.8808,
+        "registros_por_segundo": 237.11
+      },
+      {
+        "banco_id": 13,
+        "leidas": 8902,
+        "confirmadas": 8902,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 1.6474,
+        "segundos": 37.2616,
+        "registros_por_segundo": 238.91
+      },
+      {
+        "banco_id": 14,
+        "leidas": 8865,
+        "confirmadas": 8865,
+        "ya_confirmadas": 0,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 2.0601,
+        "segundos": 35.7039,
+        "registros_por_segundo": 248.29
+      }
+    ]
+  },
+  "reintento": {
+    "status": "PROCESADO",
+    "transacciones": 123785,
+    "confirmadas": 0,
+    "ya_confirmadas": 123785,
+    "errores": 0,
+    "segundos": 10.0956,
+    "bancos": [
+      {
+        "banco_id": 1,
+        "leidas": 8721,
+        "confirmadas": 0,
+        "ya_confirmadas": 8721,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4539,
+        "segundos": 9.7558,
+        "registros_por_segundo": 893.93
+      },
+      {
+        "banco_id": 2,
+        "leidas": 8830,
+        "confirmadas": 0,
+        "ya_confirmadas": 8830,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4133,
+        "segundos": 9.8144,
+        "registros_por_segundo": 899.7
+      },
+      {
+        "banco_id": 3,
+        "leidas": 8767,
+        "confirmadas": 0,
+        "ya_confirmadas": 8767,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4021,
+        "segundos": 9.5268,
+        "registros_por_segundo": 920.25
+      },
+      {
+        "banco_id": 4,
+        "leidas": 8885,
+        "confirmadas": 0,
+        "ya_confirmadas": 8885,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.2046,
+        "segundos": 9.9297,
+        "registros_por_segundo": 894.79
+      },
+      {
+        "banco_id": 5,
+        "leidas": 8785,
+        "confirmadas": 0,
+        "ya_confirmadas": 8785,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.0676,
+        "segundos": 9.9789,
+        "registros_por_segundo": 880.36
+      },
+      {
+        "banco_id": 6,
+        "leidas": 8793,
+        "confirmadas": 0,
+        "ya_confirmadas": 8793,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.3335,
+        "segundos": 9.8802,
+        "registros_por_segundo": 889.96
+      },
+      {
+        "banco_id": 7,
+        "leidas": 8872,
+        "confirmadas": 0,
+        "ya_confirmadas": 8872,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.3221,
+        "segundos": 9.8276,
+        "registros_por_segundo": 902.76
+      },
+      {
+        "banco_id": 8,
+        "leidas": 8877,
+        "confirmadas": 0,
+        "ya_confirmadas": 8877,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4073,
+        "segundos": 9.7703,
+        "registros_por_segundo": 908.57
+      },
+      {
+        "banco_id": 9,
+        "leidas": 8817,
+        "confirmadas": 0,
+        "ya_confirmadas": 8817,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4722,
+        "segundos": 9.5922,
+        "registros_por_segundo": 919.18
+      },
+      {
+        "banco_id": 10,
+        "leidas": 8779,
+        "confirmadas": 0,
+        "ya_confirmadas": 8779,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4436,
+        "segundos": 9.1964,
+        "registros_por_segundo": 954.61
+      },
+      {
+        "banco_id": 11,
+        "leidas": 8910,
+        "confirmadas": 0,
+        "ya_confirmadas": 8910,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.1625,
+        "segundos": 9.9532,
+        "registros_por_segundo": 895.19
+      },
+      {
+        "banco_id": 12,
+        "leidas": 8982,
+        "confirmadas": 0,
+        "ya_confirmadas": 8982,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.1392,
+        "segundos": 10.0153,
+        "registros_por_segundo": 896.83
+      },
+      {
+        "banco_id": 13,
+        "leidas": 8902,
+        "confirmadas": 0,
+        "ya_confirmadas": 8902,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.2798,
+        "segundos": 9.8928,
+        "registros_por_segundo": 899.85
+      },
+      {
+        "banco_id": 14,
+        "leidas": 8865,
+        "confirmadas": 0,
+        "ya_confirmadas": 8865,
+        "errores": 0,
+        "lotes": 18,
+        "ultimo_lote_segundos": 0.4699,
+        "segundos": 9.4823,
+        "registros_por_segundo": 934.9
+      }
+    ]
+  },
+  "alcance": "14 bancos SQLite temporales, transporte ASGI en proceso; no mide red ni motores Docker"
+}

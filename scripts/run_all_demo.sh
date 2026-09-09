@@ -17,20 +17,7 @@ load() {
     --database-url "$3"
 }
 
-load load_postgres.py 1 "postgresql://union_user:union_password@127.0.0.1:5433/bank_union"
-load load_mysql.py 2 "mysql://mercantil_user:mercantil_password@127.0.0.1:3306/bank_mercantil"
-load load_sqlite.py 3 "sqlite:///$SQLITE_DB"
-load load_postgres.py 4 "postgresql://bcp_user:bcp_password@127.0.0.1:5435/bank_bcp"
-load load_mysql.py 5 "mysql://bisa_user:bisa_password@127.0.0.1:3307/bank_bisa"
-load load_postgres.py 6 "postgresql://ganadero_user:ganadero_password@127.0.0.1:5436/bank_ganadero"
-load load_mysql.py 7 "mysql://economico_user:economico_password@127.0.0.1:3308/bank_economico"
-load load_mongo.py 8 "mongodb://127.0.0.1:27017/bank_prodem"
-load load_mongo.py 9 "mongodb://127.0.0.1:27017/bank_solidario"
-load load_redis.py 10 "redis://127.0.0.1:6379/0#bank10"
-load load_mongo.py 11 "mongodb://127.0.0.1:27017/bank_fie"
-load load_mongo.py 12 "mongodb://127.0.0.1:27017/bank_pyme"
-load load_neo4j.py 13 "neo4j://neo4j:bdp_password@127.0.0.1:7687"
-load load_mongo.py 14 "mongodb://127.0.0.1:27017/bank_argentina"
+"$PY" "$ROOT/scripts/load_all.py" --source-dir "$DATA" --workers 4
 
 pids=()
 cleanup() {
@@ -72,6 +59,7 @@ start_bank 14 mongo "mongodb://127.0.0.1:27017/bank_argentina" 8114
 
 bank_ids=$(seq -s, 1 14)
 start env ACTIVE_BANK_IDS="$bank_ids" \
+  ASFI_DATABASE_URL="${ASFI_DATABASE_URL:-postgresql://asfi_user:asfi_password@127.0.0.1:5434/asfi_db}" \
   BCB_URL=http://127.0.0.1:8001/api/bcb/tipo-cambio \
   "$UV" main:app --app-dir "$ROOT/asfi-service" \
   --host 127.0.0.1 --port 8000

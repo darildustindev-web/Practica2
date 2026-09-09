@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 HEX_CODE_PATTERN = re.compile(r"^[0-9A-Fa-f]{8}$")
 
 
-class RedisStore:
+from common.nosql_bulk import NoSQLBulk
+
+class RedisStore(NoSQLBulk):
     def __init__(self, url: str, bank_id: int | None = None):
         parsed = urlparse(url)
         if parsed.scheme != "redis" or not parsed.hostname:
@@ -37,7 +39,7 @@ class RedisStore:
         if self._bank_id > 0:
             self._prefix = f"bank:{self._bank_id}"
         elif fragment:
-            self._prefix = f"bank:{fragment}"
+            self._prefix = f"bank:{fragment.removeprefix('bank')}"
         else:
             self._prefix = "bank:default"
 
@@ -61,8 +63,7 @@ class RedisStore:
 
     def count_accounts(self) -> int:
         """Retorna el número de cuentas almacenadas en Redis bajo este namespace."""
-        keys = list(self._redis.scan_iter(match=f"{self._prefix}:cuenta:*"))
-        return len(keys)
+        return self._redis.zcard(f'{self._prefix}:index')
 
     def get_account(self, account_ref: str) -> dict[str, Any] | None:
         """Obtiene una cuenta específica por referencia en Redis."""
@@ -72,120 +73,47 @@ class RedisStore:
             return None
         return self._to_api_record(record)
 
+    def encrypted_accounts_after(self, after, limit):
+        refs=self._redis.zrangebylex(f'{self._prefix}:index','('+after,'+',start=0,num=limit)
+        with self._redis.pipeline(transaction=False) as pipe:
+            for ref in refs:pipe.hgetall(self._key(ref))
+            return [self._to_api_record(r) for r in pipe.execute() if r]
+
     def encrypted_accounts(self, offset: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         """Obtiene cuentas cifradas garantizando aislamiento por namespace de banco."""
         try:
-            keys = sorted(
-                self._redis.scan_iter(match=f"{self._prefix}:cuenta:*"),
-                key=lambda k: int(k.rsplit(":", 1)[-1]) if k.rsplit(":", 1)[-1].isdigit() else k,
-            )
-            records = []
-            for key in keys[offset:offset + limit]:
-                record = self._redis.hgetall(key)
-                if record:
-                    records.append(self._to_api_record(record))
-            return records
+            refs = self._redis.zrange(f'{self._prefix}:index', offset, offset + limit - 1)
+            with self._redis.pipeline(transaction=False) as pipe:
+                for ref in refs:
+                    pipe.hgetall(self._key(ref))
+                return [self._to_api_record(r) for r in pipe.execute() if r]
         except RedisError as error:
             logger.error("Error al consultar cuentas en Redis (%s): %s", self._prefix, error)
             raise ConnectionError(f"Error de conexión a Redis: {error}") from error
 
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        """Confirma una transacción en Redis validando código hex de 8 caracteres y control anti-repetición."""
-        verification_code = request.verification_code.strip().upper()
-        if not HEX_CODE_PATTERN.fullmatch(verification_code):
-            raise ValueError("El código de verificación debe contener exactamente 8 caracteres hexadecimales (0-9, A-F)")
 
-        with self._lock:
-            key = self._key(request.account_ref)
-            if not self._redis.exists(key):
-                raise KeyError(f"Cuenta '{request.account_ref}' no encontrada en el banco {self._bank_id}")
+    def upsert_accounts_batch(self, records):
+        # Script atómico: una recarga nunca borra una confirmación existente.
+        script = """
+        if redis.call('EXISTS', KEYS[1]) == 0 then
+            redis.call('HSET', KEYS[1], unpack(ARGV, 2))
+        end
+        redis.call('ZADD', KEYS[2], 0, ARGV[1])
+        return 1
+        """
+        with self._redis.pipeline(transaction=False) as pipe:
+            for r in records:
+                ref = str(r['Nro'])
+                values = dict(nro=ref,id_banco=str(r['IdBanco']),identificacion=r['Identificacion'],
+                              nombres=r['Nombres'],apellidos=r['Apellidos'],nro_cuenta=r['NroCuenta'],
+                              saldo=r['Saldo'],estado='PENDIENTE')
+                args = [part for pair in values.items() for part in pair]
+                pipe.eval(script,2,self._key(ref),f'{self._prefix}:index',ref,*args)
+            pipe.execute()
 
-            existing = self._redis.hgetall(key)
-            existing_code = existing.get("codigo_verificacion")
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])
 
-            # Control de transacciones / prevención de reutilización y alteración
-            if existing_code:
-                if existing_code == verification_code:
-                    return {
-                        "account_ref": request.account_ref,
-                        "cuenta_id": request.account_ref,
-                        "banco_id": self._bank_id,
-                        "verification_code": verification_code,
-                        "codigo_verificacion": verification_code,
-                        "saldo_bs": existing.get("saldo_bs", request.saldo_bs),
-                        "tipo_cambio": existing.get("tipo_cambio", request.exchange_rate),
-                        "status": "CONFIRMADA",
-                        "estado": "CONFIRMADA",
-                        "converted_at": request.converted_at,
-                        "reintento": True,
-                    }
-                else:
-                    raise ValueError(
-                        f"Operación rechazada: La cuenta '{request.account_ref}' ya fue confirmada previamente "
-                        f"con el código de verificación '{existing_code}'."
-                    )
-
-            # Actualizar estado y saldo en Redis
-            update_data = {
-                "saldo_bs": request.saldo_bs,
-                "codigo_verificacion": verification_code,
-                "tipo_cambio": request.exchange_rate,
-                "convertido_at": request.converted_at.isoformat(),
-                "estado": "CONFIRMADA",
-            }
-            self._redis.hset(key, mapping=update_data)
-
-            # Registrar transacción
-            self._redis.hset(
-                self._tx_key(request.account_ref),
-                mapping={
-                    "account_ref": request.account_ref,
-                    "verification_code": verification_code,
-                    "saldo_bs": request.saldo_bs,
-                    "tipo_cambio": request.exchange_rate,
-                    "estado": "CONFIRMADA",
-                    "convertido_at": request.converted_at.isoformat(),
-                },
-            )
-
-        return {
-            "account_ref": request.account_ref,
-            "cuenta_id": request.account_ref,
-            "banco_id": self._bank_id,
-            "verification_code": verification_code,
-            "codigo_verificacion": verification_code,
-            "saldo_bs": request.saldo_bs,
-            "tipo_cambio": request.exchange_rate,
-            "status": "CONFIRMADA",
-            "estado": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        """Almacena o actualiza una cuenta en Redis."""
-        nro = str(record.get("Nro") or record.get("CuentaId") or record.get("nro"))
-        id_banco = str(int(record.get("IdBanco") or record.get("BancoId") or record.get("id_banco", self._bank_id)))
-
-        account = {
-            "nro": nro,
-            "cuenta_id": nro,
-            "identificacion": record.get("Identificacion") or record.get("identificacion", ""),
-            "nombres": record.get("Nombres") or record.get("nombres", ""),
-            "apellidos": record.get("Apellidos") or record.get("apellidos", ""),
-            "nro_cuenta": record.get("NroCuenta") or record.get("nro_cuenta", ""),
-            "id_banco": id_banco,
-            "banco_id": id_banco,
-            "saldo": record.get("Saldo") or record.get("SaldoUSD") or record.get("saldo", ""),
-            "saldo_usd": record.get("SaldoUSD") or record.get("Saldo") or record.get("saldo", ""),
-            "saldo_bs": str(record.get("SaldoBs") or record.get("saldo_bs") or ""),
-            "estado": record.get("Estado") or record.get("estado", "PENDIENTE"),
-            "codigo_verificacion": str(record.get("CodigoVerificacion") or record.get("codigo_verificacion") or ""),
-            "tipo_cambio": str(record.get("TipoCambio") or record.get("tipo_cambio") or ""),
-            "convertido_at": str(record.get("FechaConversion") or record.get("convertido_at") or ""),
-        }
-
-        with self._lock:
-            self._redis.hset(self._key(nro), mapping=account)
 
     def health_check(self) -> dict[str, Any]:
         """Comprueba estado de conexión a Redis."""

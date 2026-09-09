@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 HEX_CODE_PATTERN = re.compile(r"^[0-9A-Fa-f]{8}$")
 
 
-class MongoStore:
+from common.nosql_bulk import NoSQLBulk
+
+class MongoStore(NoSQLBulk):
     def __init__(
         self,
         url: str,
@@ -99,6 +101,11 @@ class MongoStore:
             return None
         return self._to_api_record(record)
 
+    def encrypted_accounts_after(self, after, limit):
+        query={'nro':{'$gt':after}}
+        if self._bank_id>0:query['id_banco']=self._bank_id
+        return [self._to_api_record(r) for r in self._collection.find(query,{'_id':0}).sort('nro',1).limit(limit)]
+
     def encrypted_accounts(self, offset: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         """Consulta paginada de cuentas cifradas garantizando aislamiento por banco."""
         filter_query: dict[str, Any] = {}
@@ -118,125 +125,21 @@ class MongoStore:
             logger.error("Error al consultar cuentas en MongoDB (%s): %s", self._db_name, error)
             raise ConnectionError(f"Error de conexión a MongoDB: {error}") from error
 
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        """Confirma una transacción validando código hexadecimal de 8 dígitos y control de estado."""
-        verification_code = request.verification_code.strip().upper()
-        if not HEX_CODE_PATTERN.fullmatch(verification_code):
-            raise ValueError("El código de verificación debe contener exactamente 8 caracteres hexadecimales (0-9, A-F)")
 
-        with self._lock:
-            filter_query: dict[str, Any] = {"nro": request.account_ref}
-            if self._bank_id > 0:
-                filter_query["id_banco"] = self._bank_id
+    def upsert_accounts_batch(self, records):
+        from pymongo import UpdateOne
+        operations = []
+        for r in records:
+            document = dict(nro=str(r['Nro']), id_banco=int(r['IdBanco']),
+                            identificacion=r['Identificacion'], nombres=r['Nombres'], apellidos=r['Apellidos'],
+                            nro_cuenta=r['NroCuenta'], saldo=r['Saldo'], estado='PENDIENTE')
+            operations.append(UpdateOne({'nro': document['nro']}, {'$setOnInsert':document}, upsert=True))
+        if operations:
+            self._collection.bulk_write(operations, ordered=False)
 
-            existing = self._collection.find_one(filter_query)
-            if existing is None:
-                raise KeyError(f"Cuenta '{request.account_ref}' no encontrada en el banco {self._bank_id}")
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])
 
-            existing_code = existing.get("codigo_verificacion")
-            existing_status = existing.get("estado", "PENDIENTE")
-
-            # Control de transacciones / prevención de reutilización y alteración
-            if existing_code:
-                if existing_code == verification_code:
-                    # Idempotencia: confirmación idéntica ya procesada
-                    return {
-                        "account_ref": request.account_ref,
-                        "cuenta_id": request.account_ref,
-                        "banco_id": self._bank_id,
-                        "verification_code": verification_code,
-                        "codigo_verificacion": verification_code,
-                        "saldo_bs": existing.get("saldo_bs", request.saldo_bs),
-                        "tipo_cambio": existing.get("tipo_cambio", request.exchange_rate),
-                        "status": "CONFIRMADA",
-                        "estado": "CONFIRMADA",
-                        "converted_at": request.converted_at,
-                        "reintento": True,
-                    }
-                else:
-                    raise ValueError(
-                        f"Operación rechazada: La cuenta '{request.account_ref}' ya fue confirmada previamente "
-                        f"con el código de verificación '{existing_code}'."
-                    )
-
-            # Actualizar en MongoDB
-            update_data = {
-                "saldo_bs": request.saldo_bs,
-                "codigo_verificacion": verification_code,
-                "tipo_cambio": request.exchange_rate,
-                "convertido_at": request.converted_at.isoformat(),
-                "estado": "CONFIRMADA",
-            }
-            self._collection.update_one(filter_query, {"$set": update_data})
-
-            # Trazabilidad rápida en Redis si está disponible
-            if self._redis:
-                try:
-                    tx_key = f"{self._redis_prefix}:tx:{request.account_ref}"
-                    self._redis.hset(
-                        tx_key,
-                        mapping={
-                            "account_ref": request.account_ref,
-                            "verification_code": verification_code,
-                            "saldo_bs": request.saldo_bs,
-                            "tipo_cambio": request.exchange_rate,
-                            "estado": "CONFIRMADA",
-                            "convertido_at": request.converted_at.isoformat(),
-                        },
-                    )
-                    # Actualizar también caché de cuenta
-                    cuenta_key = f"{self._redis_prefix}:cuenta:{request.account_ref}"
-                    if self._redis.exists(cuenta_key):
-                        self._redis.hset(cuenta_key, mapping=update_data)
-                except Exception as error:
-                    logger.warning("No se pudo registrar transacción en Redis: %s", error)
-
-        return {
-            "account_ref": request.account_ref,
-            "cuenta_id": request.account_ref,
-            "banco_id": self._bank_id,
-            "verification_code": verification_code,
-            "codigo_verificacion": verification_code,
-            "saldo_bs": request.saldo_bs,
-            "tipo_cambio": request.exchange_rate,
-            "status": "CONFIRMADA",
-            "estado": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        """Inserta o actualiza un registro de cuenta en MongoDB y opcionalmente en Redis."""
-        nro = str(record.get("Nro") or record.get("CuentaId") or record.get("nro"))
-        id_banco = int(record.get("IdBanco") or record.get("BancoId") or record.get("id_banco", self._bank_id))
-
-        document = {
-            "nro": nro,
-            "cuenta_id": nro,
-            "identificacion": record.get("Identificacion") or record.get("identificacion", ""),
-            "nombres": record.get("Nombres") or record.get("nombres", ""),
-            "apellidos": record.get("Apellidos") or record.get("apellidos", ""),
-            "nro_cuenta": record.get("NroCuenta") or record.get("nro_cuenta", ""),
-            "id_banco": id_banco,
-            "banco_id": id_banco,
-            "saldo": record.get("Saldo") or record.get("SaldoUSD") or record.get("saldo", ""),
-            "saldo_usd": record.get("SaldoUSD") or record.get("Saldo") or record.get("saldo", ""),
-            "saldo_bs": record.get("SaldoBs") or record.get("saldo_bs"),
-            "estado": record.get("Estado") or record.get("estado", "PENDIENTE"),
-            "codigo_verificacion": record.get("CodigoVerificacion") or record.get("codigo_verificacion"),
-            "tipo_cambio": record.get("TipoCambio") or record.get("tipo_cambio"),
-            "convertido_at": record.get("FechaConversion") or record.get("convertido_at"),
-        }
-
-        with self._lock:
-            self._collection.replace_one({"nro": document["nro"]}, document, upsert=True)
-
-            if self._redis:
-                try:
-                    cuenta_key = f"{self._redis_prefix}:cuenta:{nro}"
-                    redis_map = {k: str(v) for k, v in document.items() if v is not None}
-                    self._redis.hset(cuenta_key, mapping=redis_map)
-                except Exception as error:
-                    logger.warning("No se pudo cachear cuenta en Redis: %s", error)
 
     def health_check(self) -> dict[str, Any]:
         """Comprueba estado de conexión a MongoDB y Redis."""

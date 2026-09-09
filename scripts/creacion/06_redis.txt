@@ -1,0 +1,6 @@
+# Complemento para el sexto motor. Comandos de redis-cli, ejecución manual.
+# Redis no tiene CREATE DATABASE ni esquema relacional. Selecciona DB 0.
+SELECT 0
+# Las cuentas e índice bank:10:index se materializan al cargar registros.
+# No insertar un miembro ficticio para crear el índice: alteraría el conteo.
+PING

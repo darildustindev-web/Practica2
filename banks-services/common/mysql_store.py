@@ -17,7 +17,10 @@ import pymysql
 from common.bank_router import ConfirmationRequest
 
 
-class MySQLStore:
+from common.relational_bulk import RelationalBulk
+
+
+class MySQLStore(RelationalBulk):
     def __init__(self, url: str):
         self._connection = self._connect(url)
         self._lock = threading.Lock()
@@ -75,10 +78,12 @@ class MySQLStore:
                 )
                 """
             )
+            self.migrate_legacy_schema(cursor)
         self._connection.commit()
 
     def encrypted_accounts(self, offset: int, limit: int) -> list[dict[str, Any]]:
         with self._lock, self._connection.cursor() as cursor:
+            self._connection.rollback()  # No reutilizar instantáneas REPEATABLE READ entre peticiones.
             cursor.execute(
                 """
                 SELECT c.nro AS Nro, cl.identificacion AS Identificacion,
@@ -91,76 +96,9 @@ class MySQLStore:
                 """,
                 (limit, offset),
             )
-            return list(cursor.fetchall())
+            rows = list(cursor.fetchall())
+            self._connection.rollback()
+            return rows
 
-    def confirm(self, request: ConfirmationRequest) -> dict[str, Any]:
-        with self._lock:
-            try:
-                with self._connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        UPDATE cuentas
-                        SET saldo_bs=%s, codigo_verificacion=%s,
-                            tipo_cambio=%s, convertido_at=%s
-                        WHERE nro=%s
-                        """,
-                        (
-                            request.saldo_bs,
-                            request.verification_code.upper(),
-                            request.exchange_rate,
-                            request.converted_at.replace(tzinfo=None),
-                            request.account_ref,
-                        ),
-                    )
-                    if cursor.rowcount != 1:
-                        raise KeyError("Cuenta no encontrada")
-                self._connection.commit()
-            except Exception:
-                self._connection.rollback()
-                raise
-
-        return {
-            "account_ref": request.account_ref,
-            "verification_code": request.verification_code.upper(),
-            "status": "CONFIRMADA",
-            "converted_at": request.converted_at,
-        }
-
-    def upsert_account(self, record: dict[str, Any]) -> None:
-        nro = str(record["Nro"])
-        with self._lock:
-            with self._connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO clientes (nro, identificacion, nombres, apellidos)
-                    VALUES (%s,%s,%s,%s)
-                    ON DUPLICATE KEY UPDATE
-                    identificacion=VALUES(identificacion),
-                    nombres=VALUES(nombres), apellidos=VALUES(apellidos)
-                    """,
-                    (
-                        nro,
-                        record["Identificacion"],
-                        record["Nombres"],
-                        record["Apellidos"],
-                    ),
-                )
-                cursor.execute(
-                    """
-                    INSERT INTO cuentas
-                    (nro, cliente_nro, nro_cuenta, id_banco, saldo)
-                    VALUES (%s,%s,%s,%s,%s)
-                    ON DUPLICATE KEY UPDATE
-                    cliente_nro=VALUES(cliente_nro),
-                    nro_cuenta=VALUES(nro_cuenta), id_banco=VALUES(id_banco),
-                    saldo=VALUES(saldo)
-                    """,
-                    (
-                        nro,
-                        nro,
-                        record["NroCuenta"],
-                        int(record["IdBanco"]),
-                        record["Saldo"],
-                    ),
-                )
-            self._connection.commit()
+    def upsert_account(self, record):
+        self.upsert_accounts_batch([record])
