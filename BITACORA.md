@@ -155,13 +155,26 @@ prueba en Banco 1, por eso el total no es exactamente 140.
 
 #### Pendientes de integración del equipo
 
-1. Integrante 2 debe revisar los cargadores y adaptar el seeder para la muestra
-   oficial del 1%, incluyendo validación de filas inválidas sin perder el
-   procesamiento de las filas correctas.
-2. Integrante 2 debe verificar los esquemas y consultas de PostgreSQL, MySQL y
-   SQLite para los bancos 1–7.
+1. ✅ Hecho (Integrante 2): seeder reescrito para no abortar ante filas
+   inválidas (columna vacía, IdBanco fuera de rango, Saldo no numérico,
+   Nro duplicado); ahora se descartan y se listan en
+   `data/seed/rejected_rows.csv` con el motivo. Ver "Actualización de
+   Integrante 2" más abajo para el hallazgo sobre la distribución real del
+   dataset oficial frente a la tabla del enunciado.
+2. ✅ Hecho (Integrante 2): esquemas de PostgreSQL, MySQL y SQLite para los
+   bancos 1–7 normalizados en dos tablas (`clientes`, `cuentas`) con FK,
+   verificados con datos reales cifrados/descifrados. De paso se encontraron
+   y corrigieron dos bugs de cifrado (Playfair y Hill) que corrompían Saldo,
+   Nombres y Apellidos; ver detalle abajo.
 3. Integrante 3 debe validar MongoDB, Redis y Neo4j para los bancos 8–14,
-   incluyendo consultas de defensa y evidencia de `TIENE_CUENTA`.
+   incluyendo consultas de defensa y evidencia de `TIENE_CUENTA`. Aviso de
+   Integrante 2: al probar el seeder con el dataset oficial completo, el
+   cifrado ElGamal (Banco 12) resultó extremadamente lento a escala real
+   (miles de registros) porque genera un exponente aleatorio de 2048 bits en
+   cada cifrado; el barrido de los 14 bancos no terminó en más de 2 minutos
+   por esta causa. Conviene revisar esa implementación (por ejemplo, cifrar
+   con una clave de sesión simétrica y envolverla una sola vez con ElGamal)
+   antes de sembrar los bancos 8–14 con datos reales.
 4. El equipo debe implementar la tabla central de ASFI en `asfi-db` y guardar
    cada saldo original, saldo convertido, tasa, timestamp, banco, cuenta y
    código de verificación.
@@ -178,6 +191,69 @@ adaptador con `encrypted_accounts()` y `confirm()`, se conecta mediante
 `BANK_STORAGE` y se conserva el contrato HTTP existente.
 
 ---
+
+## 🟢 3.1 Actualización de Integrante 2 (bancos relacionales, 2026-09-08)
+
+**Hallazgo sobre el dataset oficial:** el CSV entregado por el docente
+(`data/dataset.csv`, 123,790 filas) NO reparte las cuentas según la
+proporción de la tabla del enunciado (Unión 22,472, Mercantil 19,975, etc.).
+En la práctica trae ~8,700–8,900 filas por banco de forma casi pareja para
+los 14 bancos. Para los bancos 1–7 esto significa menos filas de las que
+pide la tabla oficial (por ejemplo Banco Unión: 8,721 disponibles contra
+22,472 esperadas). El seeder ya no asume la distribución del enunciado: usa
+todas las filas válidas tal como vienen etiquetadas por `IdBanco` y en la
+consola imprime una comparación banco por banco contra la cifra oficial para
+que el equipo decida si hay que pedir el dataset completo al docente. Quien
+quiera forzar el recorte a las cuotas oficiales (nunca inventa filas, solo
+recorta) puede correr `--target-distribution official_1pct`.
+
+**Bugs de cifrado corregidos en `asfi-service/crypto/ciphers.py`:**
+
+- *Playfair (Banco 4, BCP):* la reconstrucción del texto original contaba
+  posiciones entre el flujo cifrado (con relleno `X` intercalado) y el texto
+  plano. Con dígitos repetidos en el Saldo el conteo se desalineaba: por
+  ejemplo `"324443.5414"` volvía como `"3244.435414"` (el punto decimal
+  quedaba corrido). También se perdían las mayúsculas/minúsculas de Nombres
+  y Apellidos. Se reescribió para guardar de forma explícita una plantilla
+  (posición de cada separador no alfanumérico), una máscara de mayúsculas y
+  las posiciones exactas de relleno, de modo que el descifrado reconstruye
+  el original exactamente. La fusión clásica I/J de Playfair se mantiene
+  (es una propiedad conocida del algoritmo, no un defecto).
+- *Hill (Banco 5, BISA):* la versión original hacía
+  `.upper().replace(" ", "")` y descartaba cualquier carácter fuera de
+  A-Z/0-9/'.', por lo que un nombre como `"Jorge Diego"` perdía el espacio
+  para siempre (`"JORGEDIEGO"`) y un NroCuenta en notación científica con
+  `+` (`"3.96E+15"`) perdía el signo. Ahora esos caracteres se preservan de
+  forma literal y el caso original se restaura al descifrar.
+- Verificación: round-trip exacto (cifrar → descifrar → comparar contra el
+  CSV original) sobre las 61,653 filas reales de los bancos 1–7 (308,265
+  campos), con 0 discrepancias reales (las únicas diferencias en Playfair
+  son la fusión I/J, inherente al algoritmo).
+
+**Esquema de bases de datos (bancos 1–7):** se separaron `clientes`
+(identificación, nombres, apellidos) y `cuentas` (cuenta, saldo, código de
+verificación, etc.) con clave foránea `cliente_nro`, como pedía la tarjeta
+de Trello ("Tablas en bancos: Clientes, Cuentas"). El contrato HTTP/JSON de
+`encrypted_accounts()`/`confirm()` no cambió (se arma con un JOIN), así que
+ASFI y el resto del equipo no necesitan tocar nada. Probado con datos reales
+cifrados contra PostgreSQL, MySQL/MariaDB y SQLite (motores reales, no
+mocks): carga, lectura cifrada, descifrado exacto y confirmación con
+actualización de saldo, todo verificado.
+
+**Nota de plataforma:** al ejecutar el seeder y los servicios bancarios
+desde este entorno de escritorio con la carpeta del proyecto en una unidad
+de red montada, SQLite dio `disk I/O error` al crear el archivo dentro de
+`data/`. Es una limitación de ese punto de montaje (SQLite necesita bloqueo
+de archivos que la unidad de red no soporta bien), no un error del código:
+en una terminal normal de Windows/WSL sobre disco local funciona sin
+problema, como ya se validó en un entorno Linux con PostgreSQL, MySQL y
+SQLite reales.
+
+**Nuevo:** `scripts/queries_bancos_1_7.sql` con consultas de verificación
+(conteo por banco, confirmadas vs. pendientes, integridad del código hex,
+huérfanos Cliente/Cuenta, última tasa aplicada) para apoyar la auditoría de
+los bancos relacionales. No reemplaza las 8 consultas oficiales del
+enunciado (esas cubren los 14 bancos y son responsabilidad del equipo).
 
 ## 🚀 4. Ruta de Trabajo Recomendada (Roadmap de Inicio)
 
