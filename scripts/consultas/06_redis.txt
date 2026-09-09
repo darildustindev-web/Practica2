@@ -1,0 +1,81 @@
+# =====================================================================
+# LAS 8 CONSULTAS - MOTOR 5: Redis  (Banco 10 - Banco Fortaleza, cifrado AES)
+# =====================================================================
+# Ejecutar con: redis-cli -h 127.0.0.1 -p 6379
+# También: bash scripts/consultas/redis_consultas.sh
+#
+# Modelo de claves (Redis no es relacional, se navega por claves):
+#   bank:10:index           -> ZSET ordenado con todas las referencias de cuenta
+#   bank:10:cuenta:<ref>    -> HASH con los campos de la cuenta
+#                              nro, id_banco, identificacion, nombres, apellidos,
+#                              nro_cuenta, saldo (CIFRADO), estado,
+#                              saldo_bs, codigo_verificacion, tipo_cambio, convertido_at
+#   bank:10:tx:<ref>        -> HASH con el comprobante de la transacción
+#
+# PARA LA DEFENSA: Redis no tiene SQL ni JOIN. Se consulta por clave exacta o
+# recorriendo el índice ZSET. Nunca usar KEYS * en producción (bloquea el
+# servidor); se usa SCAN o el ZSET, que es lo que hace el adaptador.
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+# C1. INVENTARIO: ¿cuántas cuentas tiene cargadas el Banco 10?
+# ---------------------------------------------------------------------
+ZCARD bank:10:index
+
+
+# ---------------------------------------------------------------------
+# C2. TOTAL CONVERTIDO: Redis no agrega. Se recorre el índice y se suman
+#     los saldo_bs del lado cliente (lo hace ejecutar_consultas.py).
+#     Aquí se muestra el dato de una cuenta concreta:
+# ---------------------------------------------------------------------
+ZRANGE bank:10:index 0 4
+# tomar una referencia del resultado anterior, por ejemplo 1234:
+HGETALL bank:10:cuenta:1234
+
+
+# ---------------------------------------------------------------------
+# C3. CONSISTENCIA BANCO <-> ASFI para una cuenta puntual.
+#     Estos tres campos deben coincidir con la fila de asfi_cuentas
+#     (banco_id=10, cuenta_id=1234) en la base central.
+# ---------------------------------------------------------------------
+HMGET bank:10:cuenta:1234 saldo_bs codigo_verificacion tipo_cambio estado
+
+
+# ---------------------------------------------------------------------
+# C4. CÓDIGO DE VERIFICACIÓN de una cuenta (debe ser 8 hexadecimales)
+#     y su comprobante de transacción asociado.
+# ---------------------------------------------------------------------
+HGET bank:10:cuenta:1234 codigo_verificacion
+HGETALL bank:10:tx:1234
+
+
+# ---------------------------------------------------------------------
+# C5. AUDITORÍA DEL TIPO DE CAMBIO aplicado a esta entidad.
+#     Debe ser la misma cotización que en el resto de bancos del barrido.
+# ---------------------------------------------------------------------
+HMGET bank:10:cuenta:1234 tipo_cambio convertido_at
+
+
+# ---------------------------------------------------------------------
+# C6. CUENTAS NO PROCESADAS: se detectan por estado.
+#     (el conteo total lo hace el runner recorriendo el índice)
+# ---------------------------------------------------------------------
+HGET bank:10:cuenta:1234 estado
+
+
+# ---------------------------------------------------------------------
+# C7. RELACIÓN CLIENTE -> CUENTA
+#     En Redis el "cliente" es el campo identificacion del hash. No hay
+#     relación explícita como en Neo4j; se agrupa del lado cliente.
+# ---------------------------------------------------------------------
+HMGET bank:10:cuenta:1234 identificacion nombres apellidos nro_cuenta
+
+
+# ---------------------------------------------------------------------
+# C8. INTEGRIDAD: cuántas claves de cuenta existen realmente frente al
+#     índice. Ambos números deben coincidir (no hay huérfanos).
+# ---------------------------------------------------------------------
+ZCARD bank:10:index
+SCAN 0 MATCH bank:10:cuenta:* COUNT 1000
+DBSIZE

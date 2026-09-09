@@ -7,7 +7,6 @@ import secrets
 import uuid
 from contextvars import ContextVar
 import sys
-import fcntl
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,8 +18,10 @@ from fastapi import FastAPI, HTTPException
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from shared.money import parse_money, convert_money
+from shared.portable import bloquear, EXCLUSIVO
 from crypto.key_manager import CipherFactory
 from journal import Journal
+from shared.seguridad import cabeceras_de_firma as firmar_peticion
 from monitor import monitor
 
 app=FastAPI(title='Servicio Central ASFI',version='2.0.0')
@@ -44,7 +45,11 @@ def generate_verification_code():
 async def request_retry(client, method, url, **kwargs):
     for attempt in range(3):
         try:
-            response=await client.request(method,url,**kwargs)
+            # Cada intento se firma con un nonce nuevo: un reintento legítimo
+            # nunca se confunde con un ataque de repetición.
+            request=client.build_request(method,url,**kwargs)
+            request.headers.update(firmar_peticion(method,request.url.path,request.content))
+            response=await client.send(request)
             response.raise_for_status()
             return response
         except httpx.HTTPError as exc:
@@ -105,7 +110,7 @@ AUDIT_RUN = ContextVar('audit_run', default=None)
 def append_audit(records):
     AUDIT_FILE.parent.mkdir(parents=True,exist_ok=True)
     with AUDIT_FILE.open('a',encoding='utf-8') as file:
-        fcntl.flock(file,fcntl.LOCK_EX)
+        bloquear(file, EXCLUSIVO)
         for record in records:
             # Datos personales completos sólo en la consolidación, no en el log.
             item={k:v for k,v in record.items() if k!='datos'}
@@ -283,7 +288,7 @@ async def _execute_conversion(client=None,new_round=False):
     lockpath.parent.mkdir(parents=True,exist_ok=True)
     with lockpath.open('a') as lockfile:
         try:
-            fcntl.flock(lockfile,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            bloquear(lockfile, EXCLUSIVO, bloqueante=False)
         except BlockingIOError as exc:
             raise RuntimeError('Ya hay un barrido ASFI en ejecución') from exc
         journal=await asyncio.to_thread(Journal,DATABASE_URL)

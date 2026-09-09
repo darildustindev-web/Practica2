@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'asfi-service'))
 from shared.money import parse_money
+from shared.portable import bloquear, memoria_maxima_mib, EXCLUSIVO
 from crypto.ciphers import ECCCipher
 from crypto.key_manager import CipherFactory
 
@@ -238,8 +239,7 @@ def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_
         for f in [*files.values(),rejected]:
             f.flush()
             os.fsync(f.fileno())
-        import resource
-        metrics['memoria_principal_max_mib'] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2)
+        metrics['memoria_principal_max_mib'] = memoria_maxima_mib()
         metrics['segundos'] = round(perf_counter()-started,4)
         metrics['registros_por_segundo'] = round(metrics['leidas']/max(metrics['segundos'],0.0001),2)
         (stage/'metrics.json').write_text(json.dumps(metrics,indent=2),encoding='utf-8')
@@ -249,12 +249,11 @@ def _seed(dataset, output_dir, *, workers=2, batch_size=500, limit=None, target_
 
 
 def seed(dataset, output_dir, **kwargs):
-    import fcntl
     output_dir=Path(output_dir)
     output_dir.mkdir(parents=True,exist_ok=True)
     with (output_dir/'.seed.lock').open('a') as lock:
         try:
-            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            bloquear(lock, EXCLUSIVO, bloqueante=False)
         except BlockingIOError as exc:
             raise ValueError('Otra carga está usando el directorio de salida') from exc
         return _seed(dataset,output_dir,**kwargs)

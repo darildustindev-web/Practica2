@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero de Entrega — Práctica 2 ASFI/BCB</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface:      #fcfcfb;
+    --plane:        #f9f9f7;
+    --ink:          #0b0b0b;
+    --ink-2:        #52514e;
+    --ink-muted:    #898781;
+    --line:         #e1e0d9;
+    --ring:         rgba(11,11,11,0.10);
+    --ok:           #0ca30c;
+    --aviso:        #fab219;
+    --falla:        #d03b3b;
+    --acento:       #2a78d6;
+    --consola-bg:   #14140f;
+    --consola-ink:  #e8e6dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface:    #1a1a19;
+      --plane:      #0d0d0d;
+      --ink:        #ffffff;
+      --ink-2:      #c3c2b7;
+      --ink-muted:  #898781;
+      --line:       #2c2c2a;
+      --ring:       rgba(255,255,255,0.10);
+      --ok:         #0ca30c;
+      --aviso:      #fab219;
+      --falla:      #d03b3b;
+      --acento:     #3987e5;
+      --consola-bg: #0a0a08;
+      --consola-ink:#e8e6dd;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--ink);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .envoltura { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; }
+
+  header.principal { margin-bottom: 22px; }
+  header.principal h1 { margin: 0 0 4px; font-size: 21px; font-weight: 650; letter-spacing: -0.01em; }
+  header.principal p { margin: 0; color: var(--ink-2); font-size: 13px; }
+
+  /* --- Resumen --- */
+  .resumen {
+    display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px;
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  @media (max-width: 720px) { .resumen { grid-template-columns: 1fr; } }
+  .puntaje .cifra { font-size: 46px; font-weight: 680; line-height: 1; letter-spacing: -0.02em; }
+  .puntaje .cifra span { font-size: 20px; color: var(--ink-muted); font-weight: 500; }
+  .puntaje .etiqueta { color: var(--ink-2); font-size: 13px; margin-top: 6px; }
+  .barra { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; display: flex; margin-top: 14px; }
+  .barra i { display: block; height: 100%; }
+  .barra i.ok { background: var(--ok); }
+  .barra i.aviso { background: var(--aviso); }
+  .mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; align-content: start; }
+  .mini div { border-left: 2px solid var(--line); padding-left: 10px; }
+  .mini b { display: block; font-size: 20px; font-weight: 620; letter-spacing: -0.01em; }
+  .mini span { color: var(--ink-2); font-size: 12px; }
+
+  /* --- Pestañas --- */
+  nav.pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; flex-wrap: wrap; }
+  nav.pestanas button {
+    background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+    padding: 9px 14px; font: inherit; font-weight: 550; color: var(--ink-2); border-radius: 6px 6px 0 0;
+  }
+  nav.pestanas button:hover { background: var(--surface); color: var(--ink); }
+  nav.pestanas button[aria-selected="true"] { color: var(--acento); border-bottom-color: var(--acento); }
+  section[hidden] { display: none; }
+
+  /* --- Tarjetas de rúbrica --- */
+  .tarjeta {
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 12px;
+  }
+  .tarjeta .cabecera { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .tarjeta h3 { margin: 0; font-size: 15px; font-weight: 600; flex: 1 1 320px; }
+  .pts {
+    font-variant-numeric: tabular-nums; font-weight: 620; font-size: 14px;
+    background: var(--plane); border: 1px solid var(--line); border-radius: 6px; padding: 2px 9px;
+  }
+  .pastilla {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    border-radius: 999px; padding: 3px 10px; border: 1px solid;
+  }
+  .pastilla.ok    { color: var(--ok);    border-color: var(--ok);    background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .pastilla.aviso { color: #8a6100;      border-color: var(--aviso); background: color-mix(in srgb, var(--aviso) 16%, transparent); }
+  .pastilla.falla { color: var(--falla); border-color: var(--falla); background: color-mix(in srgb, var(--falla) 10%, transparent); }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .pastilla.aviso { color: var(--aviso); }
+  }
+  .tarjeta .resumen-linea { margin: 9px 0 0; color: var(--ink-2); font-size: 13px; }
+  .tarjeta ul { margin: 10px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+  .tarjeta ul li { margin: 3px 0; }
+  .comodemostrar {
+    margin-top: 11px; padding: 9px 11px; border-radius: 7px; background: var(--plane);
+    border: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2);
+  }
+  .comodemostrar b { color: var(--ink); font-weight: 600; }
+
+  /* --- Acciones --- */
+  .grupo-titulo { font-size: 13px; font-weight: 620; color: var(--ink-2); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .acciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .accion {
+    text-align: left; background: var(--surface); border: 1px solid var(--ring); border-radius: 9px;
+    padding: 13px 14px; cursor: pointer; font: inherit; color: var(--ink); transition: border-color .12s, transform .12s;
+  }
+  .accion:hover:not(:disabled) { border-color: var(--acento); transform: translateY(-1px); }
+  .accion:disabled { opacity: .45; cursor: not-allowed; }
+  .accion b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+  .accion span { color: var(--ink-2); font-size: 12.5px; }
+  .accion.peligro { border-color: color-mix(in srgb, var(--falla) 45%, var(--ring)); }
+  .accion.peligro:hover:not(:disabled) { border-color: var(--falla); }
+
+  /* --- Consola --- */
+  .consola-caja { margin-top: 20px; }
+  .consola-barra { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .consola-barra h3 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
+  .consola {
+    background: var(--consola-bg); color: var(--consola-ink); border-radius: 9px; padding: 14px 16px;
+    font: 12.5px/1.6 ui-monospace, "Cascadia Code", Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow-y: auto; min-height: 120px;
+  }
+  .consola:empty::before { content: "Sin salida todavía. Elegí una acción de arriba."; color: #6f6d64; }
+  button.secundario {
+    background: var(--surface); border: 1px solid var(--ring); border-radius: 7px; padding: 6px 12px;
+    font: inherit; font-size: 13px; cursor: pointer; color: var(--ink);
+  }
+  button.secundario:hover { border-color: var(--acento); }
+  button.secundario:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* --- Listas de requisitos --- */
+  table.lista { width: 100%; border-collapse: collapse; background: var(--surface);
+                border: 1px solid var(--ring); border-radius: 10px; overflow: hidden; }
+  table.lista th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+                   color: var(--ink-muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  table.lista td { padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+  table.lista tr:last-child td { border-bottom: none; }
+  table.lista td.nota { color: var(--ink-2); }
+
+  .enlaces { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .enlaces a { color: var(--acento); text-decoration: none; font-size: 13px; border: 1px solid var(--ring);
+               border-radius: 7px; padding: 6px 11px; background: var(--surface); }
+  .enlaces a:hover { border-color: var(--acento); }
+  .aviso-caja { background: color-mix(in srgb, var(--aviso) 12%, var(--surface));
+                border: 1px solid var(--aviso); border-radius: 9px; padding: 12px 15px; margin-bottom: 16px; font-size: 13px; }
+  .aviso-caja b { display: block; margin-bottom: 3px; }
+  .cargando { color: var(--ink-muted); font-size: 13px; padding: 20px 0; }
+  footer.pie { margin-top: 28px; color: var(--ink-muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="envoltura">
+
+  <header class="principal">
+    <h1>Tablero de Entrega — Práctica 2: Plataforma Distribuida de Conversión Monetaria</h1>
+    <p>Estado real de la rúbrica, consultado contra las bases de datos. Desde acá también se ejecuta la demostración.</p>
+  </header>
+
+  <div class="resumen">
+    <div class="puntaje">
+      <div class="cifra" id="cifraPuntos">—<span>/130</span></div>
+      <div class="etiqueta" id="etiquetaPuntos">Consultando el estado…</div>
+      <div class="barra"><i class="ok" id="barraOk" style="width:0"></i><i class="aviso" id="barraAviso" style="width:0"></i></div>
+    </div>
+    <div class="mini" id="miniCifras"></div>
+  </div>
+
+  <nav class="pestanas" role="tablist">
+    <button role="tab" aria-selected="true"  data-seccion="rubrica">Rúbrica</button>
+    <button role="tab" aria-selected="false" data-seccion="acciones">Ejecutar</button>
+    <button role="tab" aria-selected="false" data-seccion="requisitos">Requisitos</button>
+    <button role="tab" aria-selected="false" data-seccion="seguridad">Seguridad</button>
+  </nav>
+
+  <section id="seccion-rubrica">
+    <div id="listaRubrica"><p class="cargando">Consultando las bases de datos…</p></div>
+    <div class="enlaces">
+      <a href="http://127.0.0.1:8000/panel" target="_blank" rel="noopener">Panel de operación de la ASFI</a>
+      <a href="http://127.0.0.1:7474" target="_blank" rel="noopener">Navegador de Neo4j (grafo)</a>
+      <a href="http://127.0.0.1:8001/api/bcb/tipo-cambio" target="_blank" rel="noopener">Cotización del BCB</a>
+    </div>
+  </section>
+
+  <section id="seccion-acciones" hidden>
+    <div class="aviso-caja">
+      <b>Cómo usar esta pestaña</b>
+      El orden habitual es: <em>Verificar entorno</em> → <em>Reiniciar todo desde cero</em> →
+      <em>Levantar los 16 servicios</em> → y ya en la defensa, las acciones de demostración.
+      Sólo puede correr una acción a la vez; la salida aparece abajo en vivo.
+    </div>
+    <div id="listaAcciones"><p class="cargando">Cargando acciones…</p></div>
+
+    <div class="consola-caja">
+      <div class="consola-barra">
+        <h3 id="tituloConsola">Salida</h3>
+        <button class="secundario" id="botonDetener" disabled>Detener</button>
+        <button class="secundario" id="botonLimpiar">Limpiar</button>
+      </div>
+      <div class="consola" id="consola"></div>
+    </div>
+  </section>
+
+  <section id="seccion-requisitos" hidden>
+    <table class="lista">
+      <thead><tr><th style="width:26px"></th><th>Requisito técnico del enunciado</th><th>Cómo se cumple</th></tr></thead>
+      <tbody id="cuerpoRequisitos"><tr><td colspan="3" class="cargando">Cargando…</td></tr></tbody>
+    </table>
+  </section>
+
+  <section id="seccion-seguridad" hidden>
+    <table class="lista">
+      <thead><tr><th>Amenaza que pide contemplar el enunciado</th><th>Mitigación implementada</th></tr></thead>
+      <tbody id="cuerpoAmenazas"><tr><td colspan="2" class="cargando">Cargando…</td></tr></tbody>
+    </table>
+    <div class="aviso-caja" style="margin-top:16px">
+      <b>Limitación que conviene decir vos mismo en la defensa</b>
+      La firma HMAC autentica e integra los mensajes, pero <em>no cifra el canal</em>.
+      Para confidencialidad en tránsito habría que poner HTTPS/TLS delante, que se
+      configura fuera de la aplicación.
+    </div>
+  </section>
+
+  <footer class="pie">
+    Este tablero corre sólo en 127.0.0.1 y ejecuta una lista fija de acciones: el navegador
+    envía un identificador, nunca un comando. <span id="pieEntorno"></span>
+  </footer>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const ICONO = { ok: "✓", aviso: "⚠", falla: "✕" };
+const NOMBRE_ESTADO = { ok: "Cumple", aviso: "Revisar", falla: "No cumple" };
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+/* ---------- Pestañas ---------- */
+document.querySelectorAll('nav.pestanas button').forEach(boton => {
+  boton.addEventListener('click', () => {
+    document.querySelectorAll('nav.pestanas button').forEach(b => b.setAttribute('aria-selected', b === boton));
+    document.querySelectorAll('section[id^="seccion-"]').forEach(s => { s.hidden = true; });
+    $('#seccion-' + boton.dataset.seccion).hidden = false;
+  });
+});
+
+/* ---------- Rúbrica ---------- */
+async function cargarRubrica() {
+  try {
+    const datos = await (await fetch('/api/rubrica')).json();
+    const pct = (v) => (datos.puntos_totales ? (100 * v / datos.puntos_totales) : 0);
+    $('#cifraPuntos').innerHTML = `${datos.puntos_ok}<span>/${datos.puntos_totales}</span>`;
+    $('#etiquetaPuntos').textContent =
+      datos.puntos_parciales
+        ? `${datos.puntos_parciales} puntos más dependen de ítems marcados «Revisar»`
+        : (datos.puntos_ok === datos.puntos_totales
+            ? 'Los 7 ítems de la rúbrica están cubiertos'
+            : 'Puntos de ítems verificados en vivo');
+    $('#barraOk').style.width = pct(datos.puntos_ok) + '%';
+    $('#barraAviso').style.width = pct(datos.puntos_parciales) + '%';
+
+    $('#miniCifras').innerHTML = [
+      ['Entidades con datos', `${datos.bancos_con_datos} / 14`],
+      ['Cuentas cargadas', datos.total_cuentas.toLocaleString('es-BO')],
+      ['Cuentas convertidas', datos.total_convertidas.toLocaleString('es-BO')],
+      ['Ítems que cumplen', `${datos.items.filter(i => i.estado === 'ok').length} / ${datos.items.length}`],
+    ].map(([t, v]) => `<div><b>${esc(v)}</b><span>${esc(t)}</span></div>`).join('');
+
+    $('#listaRubrica').innerHTML = datos.items.map(item => `
+      <article class="tarjeta">
+        <div class="cabecera">
+          <span class="pastilla ${item.estado}">${ICONO[item.estado]} ${NOMBRE_ESTADO[item.estado]}</span>
+          <h3>${esc(item.titulo)}</h3>
+          <span class="pts">${item.puntos} pts</span>
+        </div>
+        <p class="resumen-linea">${esc(item.resumen)}</p>
+        <ul>${item.detalles.map(d => `<li>${esc(d)}</li>`).join('')}</ul>
+        <div class="comodemostrar"><b>Cómo demostrarlo:</b> ${esc(item.como_demostrar)}</div>
+      </article>`).join('');
+  } catch (e) {
+    $('#listaRubrica').innerHTML =
+      `<div class="aviso-caja"><b>No se pudo consultar el estado</b>${esc(e.message)}<br>
+       Comprobá que Docker esté levantado (<code>docker compose up -d</code>).</div>`;
+  }
+}
+
+/* ---------- Acciones ---------- */
+const GRUPOS = { preparacion: 'Preparación', demostracion: 'Demostración' };
+
+async function cargarAcciones() {
+  const { acciones } = await (await fetch('/api/acciones')).json();
+  const porGrupo = {};
+  acciones.forEach(a => (porGrupo[a.grupo] ||= []).push(a));
+  $('#listaAcciones').innerHTML = Object.entries(porGrupo).map(([grupo, lista]) => `
+    <div class="grupo-titulo">${esc(GRUPOS[grupo] || grupo)}</div>
+    <div class="acciones">
+      ${lista.map(a => `
+        <button class="accion ${a.confirmar ? 'peligro' : ''}" data-clave="${esc(a.clave)}"
+                ${a.disponible ? '' : 'disabled title="Requiere Windows"'}
+                ${a.confirmar ? `data-confirmar="${esc(a.confirmar)}"` : ''}>
+          <b>${esc(a.titulo)}</b><span>${esc(a.detalle)}${a.disponible ? '' : ' — sólo en Windows'}</span>
+        </button>`).join('')}
+    </div>`).join('');
+
+  document.querySelectorAll('.accion').forEach(boton => {
+    boton.addEventListener('click', async () => {
+      const confirmar = boton.dataset.confirmar;
+      if (confirmar && !window.confirm(confirmar)) return;
+      try {
+        const r = await fetch('/api/acciones/' + boton.dataset.clave, { method: 'POST' });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'No se pudo iniciar'); return; }
+        document.querySelector('nav.pestanas button[data-seccion="acciones"]').click();
+        $('#consola').textContent = '';
+        seguirSalida();
+      } catch (e) { alert('Error: ' + e.message); }
+    });
+  });
+}
+
+/* ---------- Consola ---------- */
+let temporizador = null;
+async function seguirSalida() {
+  clearInterval(temporizador);
+  const tick = async () => {
+    try {
+      const estado = await (await fetch('/api/salida')).json();
+      const consola = $('#consola');
+      const abajo = consola.scrollHeight - consola.scrollTop - consola.clientHeight < 40;
+      consola.textContent = estado.lineas.join('\n');
+      if (abajo) consola.scrollTop = consola.scrollHeight;
+      $('#botonDetener').disabled = !estado.corriendo;
+      $('#tituloConsola').textContent = estado.accion
+        ? `Salida — ${estado.accion}${estado.corriendo ? ' (en curso…)' : (estado.codigo === 0 ? ' (terminó bien)' : ` (código ${estado.codigo})`)}`
+        : 'Salida';
+      if (!estado.corriendo) {
+        clearInterval(temporizador); temporizador = null;
+        cargarRubrica();
+      }
+    } catch { clearInterval(temporizador); temporizador = null; }
+  };
+  await tick();
+  if (!temporizador) temporizador = setInterval(tick, 900);
+}
+
+$('#botonDetener').addEventListener('click', async () => {
+  await fetch('/api/detener', { method: 'POST' });
+});
+$('#botonLimpiar').addEventListener('click', () => { $('#consola').textContent = ''; });
+
+/* ---------- Requisitos y seguridad ---------- */
+async function cargarRequisitos() {
+  const datos = await (await fetch('/api/requisitos')).json();
+  $('#cuerpoRequisitos').innerHTML = datos.requisitos.map(r => `
+    <tr>
+      <td><span class="pastilla ${r.estado}" title="${esc(NOMBRE_ESTADO[r.estado])}">${ICONO[r.estado]}</span></td>
+      <td>${esc(r.texto)}</td>
+      <td class="nota">${esc(r.nota)}</td>
+    </tr>`).join('');
+  $('#cuerpoAmenazas').innerHTML = datos.amenazas.map(a => `
+    <tr><td><strong>${esc(a.amenaza)}</strong></td><td class="nota">${esc(a.mitigacion)}</td></tr>`).join('');
+}
+
+async function cargarEntorno() {
+  try {
+    const e = await (await fetch('/api/entorno')).json();
+    $('#pieEntorno').textContent = `Sistema: ${e.sistema} · Python ${e.python} · ${e.raiz}`;
+  } catch {}
+}
+
+cargarRubrica();
+cargarAcciones();
+cargarRequisitos();
+cargarEntorno();
+seguirSalida();
+setInterval(cargarRubrica, 30000);
+</script>
+</body>
+</html>

@@ -255,6 +255,191 @@ huérfanos Cliente/Cuenta, última tasa aplicada) para apoyar la auditoría de
 los bancos relacionales. No reemplaza las 8 consultas oficiales del
 enunciado (esas cubren los 14 bancos y son responsabilidad del equipo).
 
+## 🔍 3.2 Revisión final contra la rúbrica (2026-09-09)
+
+Revisión del proyecto ya mergeado, verificando el código contra motores reales
+(PostgreSQL, MySQL/MariaDB, SQLite y Redis levantados de verdad con el dataset
+del docente). Detalle completo en `docs/ENTREGA_FINAL.md`.
+
+### 🔴 Bug crítico encontrado: saldos inflados en los datos cargados
+
+Los archivos de `data/seed-docente1/` (y por lo tanto las 14 bases cargadas el
+2026-09-09 a las 11:44) tienen los saldos multiplicados por hasta 10.000: se les
+quitó el punto decimal. Ejemplo, cuenta Nro 9 del Banco Unión: el CSV dice
+`301716.8517` y en la base quedó `3017168517.0000`. Verificado sobre 300 cuentas
+del Banco 1: 283 incorrectas.
+
+**El código actual ya está corregido**: se ejecutó `scripts/seeder.py` de hoy
+sobre el mismo `data/dataset.csv` (MD5 idéntico al original) y produjo 300/300
+saldos correctos. El problema es sólo que el seed nunca se regeneró después de
+arreglar `shared/money.py`.
+
+**Acción pendiente del equipo:** volver a correr el seeder y recargar las 14
+bases antes de la entrega (paso 3 de `docs/ENTREGA_FINAL.md`).
+
+### ❌ Faltaba el entregable de 40 puntos
+
+La rúbrica pide "8 Consultas a la base de datos y preguntas (Sin IA) — 40 pts" y
+no existía. Se agregó `scripts/consultas/` con una versión por motor
+(PostgreSQL, MySQL, SQLite, MongoDB, Neo4j, Redis y la base central de ASFI),
+un runner `ejecutar_consultas.py` que las ejecuta sobre los 14 bancos y genera
+evidencia, y un README que explica cada consulta con la pregunta que responde
+(para poder defenderlas sin IA).
+
+Las 8 consultas cubren: inventario y avance, saldo USD/Bs consolidado,
+consistencia banco↔ASFI, validación de los códigos hexadecimales, auditoría del
+tipo de cambio y prueba del barrido paralelo, cuentas no procesadas, relación
+cliente→cuenta (grafo) e integridad aritmética de la conversión.
+
+### ➕ Esquema `Bancos` / `Cuentas` del enunciado
+
+El enunciado define literalmente esas dos tablas; el servicio escribe en
+`asfi_cuentas`. Se agregó `scripts/creacion/asfi_vistas_enunciado.sql`, que crea
+la tabla real `Bancos` con las 14 entidades y la vista `Cuentas` con los nombres
+y tipos exactos del enunciado, sin duplicar datos ni tocar el servicio.
+
+### ➕ Comunicación segura entre nodos
+
+Era un requerimiento técnico explícito ("comunicación segura entre nodos") junto
+con las consideraciones de seguridad de MITM, replay y spoofing, y no estaba
+implementado: cualquier proceso podía llamar a `POST /cuentas/confirmar`.
+
+Se agregó `shared/seguridad.py`: firma HMAC-SHA256 sobre método + ruta + cuerpo,
+nonce único por petición y ventana temporal de 120 s. Se conectó en
+`bank_template/main.py` (middleware) y en `asfi-service/main.py` (firma de las
+peticiones salientes), **protegido por la variable `ASFI_HMAC_SECRET`**: sin ella
+el sistema se comporta exactamente igual que antes. Verificado corriendo el
+barrido en los dos modos con idéntico resultado (2400/2400, 0 errores).
+
+`scripts/demo_seguridad.py` demuestra los cuatro escenarios en vivo: petición
+legítima aceptada; spoofing, MITM y replay rechazados con HTTP 401.
+
+### ✅ Lo que se verificó y funciona
+
+- Barrido paralelo con 4 bancos en 4 motores distintos: 3.200 transacciones,
+  3.200 confirmadas, 0 errores, 1,13 s.
+- Una sola cotización del BCB para todo el barrido (ventana de 0,75 s).
+- `saldo_bs = saldo_usd × tipo_cambio` exacto en las 3.200 cuentas, 0 descuadres.
+- Consistencia banco↔ASFI: 3.200 comparadas, 0 diferencias.
+- 3.200 códigos de verificación, 0 con formato inválido, 0 duplicados.
+
+### ⚠️ Notas operativas
+
+- Si el barrido falla con `BrokenProcessPool`, usar `ASFI_CRYPTO_WORKERS=0`
+  (descifrado en hilos). Ocurrió al probar en un entorno con pocos recursos.
+- `bank_template/main.py` importa los seis adaptadores de forma incondicional,
+  así que un banco no arranca si falta algún driver aunque no lo use. No es
+  bloqueante (están todos en `requirements.txt`), pero conviene saberlo.
+
+## 🪟 3.3 Windows nativo, reinicio de la demostración y tablero (2026-09-09)
+
+Segunda pasada de la revisión final. El objetivo fue que el proyecto se corra
+**enteramente en Windows**, que la demostración se pueda **repetir desde cero**
+las veces que haga falta, y que haya **una sola pantalla** desde donde ver el
+estado real de la rúbrica y lanzar cada paso.
+
+### 🔴 Bug crítico: el proyecto no arrancaba en Windows
+
+`asfi-service/main.py` y `scripts/seeder.py` importaban `fcntl` y `resource`,
+que **no existen en Windows**. El servicio ASFI no levantaba y el seeder moría
+en el import. Todo el pipeline estaba efectivamente roto fuera de Linux.
+
+**Solución:** `shared/portable.py`, una capa fina que resuelve las dos cosas en
+los dos sistemas operativos:
+
+- **Bloqueo de archivos**: en Windows usa `LockFileEx` / `UnlockFileEx` de
+  `kernel32` vía `ctypes` (exclusivo `0x2`, no bloqueante `0x1`); en Unix usa
+  `fcntl.flock`. Misma API para quien la llama: `bloquear(archivo, EXCLUSIVO)`
+  y `bloquear(archivo, COMPARTIDO, bloqueante=False)`.
+- **Memoria máxima del proceso**: en Windows por `GetProcessMemoryInfo`, en
+  Unix por `resource.getrusage`. El seeder reporta
+  `metrics.memoria_principal_max_mib` igual en ambos.
+- **`autoprueba()`**: se ejerce sola y la usa `Verificar-Entorno.ps1`.
+
+Archivos parchados: `asfi-service/main.py`, `scripts/seeder.py`,
+`scripts/load_common.py`, `scripts/benchmark_conversion.py` (este último
+escribía en `/tmp/…`, ruta que no existe en Windows; ahora escribe en
+`docs\benchmark-conversion.json`).
+
+Se verificó que el pipeline completo sigue dando **2400/2400 con 0 errores**
+después del cambio, y que la rama de Windows manda los flags correctos a
+`LockFileEx`.
+
+### ➕ Scripts de PowerShell (`scripts\windows\`)
+
+| Script | Para qué |
+|---|---|
+| `Verificar-Entorno.ps1` | 8 chequeos previos: Python, Docker, motores, imports Unix, `portable.autoprueba()`, puertos, dataset, dependencias |
+| `Reiniciar-Demo.ps1` | **Deja todo como recién instalado.** 8 pasos: detener servicios → `docker compose down -v` → limpiar `data\seed` y SQLite → levantar contenedores → esperar motores → sembrar → **verificar saldos** → cargar 14 bancos + tablas del enunciado |
+| `Levantar-Servicios.ps1` | Levanta BCB + 14 bancos + ASFI y guarda los PID en `data\.servicios.pids` |
+| `Detener-Servicios.ps1` | Los baja usando ese archivo, con red de seguridad por línea de comandos |
+| `Abrir-Tablero.ps1` | Abre el tablero de entrega en el navegador |
+
+`Reiniciar-Demo.ps1` tiene tres modos: normal, `-SoloLimpiar` (apaga y borra sin
+reconstruir) y `-Rapido` (siembra y carga sólo los bancos 1, 2, 3 y 10 — un
+motor de cada tipo — para ensayar sin esperar el dataset completo).
+
+El paso 7 es un **candado**: si `verificar_saldos.py` encuentra que un saldo
+descifrado no coincide con `data\dataset.csv`, el script se detiene y **no
+carga las bases**. Así el bug de los saldos inflados no puede volver a entrar
+sin que nos enteremos.
+
+### ➕ Tablero de entrega (`scripts\tablero\`)
+
+`servidor.py` + `tablero.html`: un FastAPI en `http://127.0.0.1:8090` con cuatro
+pestañas.
+
+- **Rúbrica** — los 7 ítems con su estado **consultado en vivo contra las bases**
+  (no una lista escrita a mano): cuántos bancos tienen datos, cuántas cuentas,
+  cuántas convertidas, si el tipo de cambio fue único, si hay descuadres
+  aritméticos, si los códigos de verificación son válidos y únicos, si el grafo
+  de Neo4j está poblado. Cada ítem trae su puntaje y cómo demostrarlo.
+- **Ejecutar** — un botón por cada paso de la demostración (verificar entorno,
+  reiniciar, levantar servicios, barrido, 8 consultas, demo de seguridad,
+  acelerar/restaurar el BCB) con la salida en vivo en una consola.
+- **Requisitos** — los requerimientos del enunciado con su estado.
+- **Seguridad** — las cuatro amenazas y su mitigación.
+
+**Decisiones de seguridad del tablero** (ejecuta comandos, así que se acotó a
+propósito):
+
+- Escucha **sólo en `127.0.0.1`**: no es accesible desde la red.
+- **Lista blanca fija** de acciones (`ACCIONES`). No existe forma de mandarle un
+  comando arbitrario: el navegador manda una clave, no una línea de comandos.
+- **Sin `shell=True`** y **sin argumentos que vengan del navegador**.
+- **Chequeo de mismo origen** en los POST (403 si no).
+- Una acción a la vez.
+
+Probado: clave inventada → 404, otro origen → 403, acción de Windows en Linux →
+400, y la ejecución real transmite la salida y propaga el código de salida.
+
+La lectura del estado se hace en paralelo (`ThreadPoolExecutor`, 15 hilos), así
+que la rúbrica carga en ~9 s incluso con motores caídos, en vez de sumar el
+timeout de cada uno.
+
+### ➕ `docs\ENTREGA_FINAL.md`
+
+Documento único de entrega, reescrito: qué pide el enunciado, qué construimos,
+instalación desde cero en Windows, el comando de reinicio, un guion de
+demostración de 10 pasos con qué decir en cada uno, la tabla de la rúbrica
+(130 pts) con cómo se demuestra cada ítem, el mapa de archivos, 10 preguntas
+probables con su respuesta, y una tabla de qué se probó de verdad y qué no.
+
+### ⚙️ Correcciones menores de esta pasada
+
+- `asfi_vistas_enunciado.sql` fallaba en una base recién creada
+  (`relation "asfi_cuentas" does not exist`). Ahora incluye el DDL idempotente
+  de las tablas base; probado en base vacía y en base cargada.
+- `Verificar-Entorno.ps1` daba OK falso al buscar imports de Unix (los patrones
+  con `\` no coincidían). Se reemplazó por `Get-ChildItem -Recurse -Filter *.py`;
+  se comprobó inyectando un `import fcntl` a propósito, y lo detecta.
+- `Get-NetTCPConnection` no está en todas las instalaciones: se reemplazó por
+  `[System.Net.NetworkInformation.IPGlobalProperties]`.
+- El SQL del enunciado se pasa al contenedor con `docker cp` en vez de por un
+  pipe: PowerShell podía alterar la codificación y el script tiene acentos.
+- `04_mongodb.js` tenía `const db = db.getSiblingDB(...)` (la variable se
+  sombreaba a sí misma). Renombrada a `BD`.
+
 ## 🚀 4. Ruta de Trabajo Recomendada (Roadmap de Inicio)
 
 Para arrancar el desarrollo de forma ordenada y sin bloqueos entre integrantes:

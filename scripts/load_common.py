@@ -5,6 +5,10 @@ import argparse
 import json
 from pathlib import Path
 from time import perf_counter
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shared.portable import bloquear, COMPARTIDO
 
 FIELDS = ('Nro','IdBanco','Identificacion','Nombres','Apellidos','NroCuenta','Saldo')
 
@@ -85,10 +89,9 @@ def _load(source, store, batch_size=1000, expected_bank=None):
 
 
 def load(source, store, batch_size=1000, expected_bank=None):
-    import fcntl
     with (Path(source).parent/'.seed.lock').open('a') as lock:
         try:
-            fcntl.flock(lock,fcntl.LOCK_SH|fcntl.LOCK_NB)
+            bloquear(lock, COMPARTIDO, bloqueante=False)
         except BlockingIOError as exc:
             raise ValueError('El seeder está publicando este dataset; reintente al finalizar') from exc
         return _load(source,store,batch_size,expected_bank)

@@ -78,6 +78,13 @@ def create_app(
 
     bank_app.include_router(create_bank_router(store, b_id))
 
+    # Protección de la comunicación entre nodos (spoofing / MITM / replay).
+    # Sólo se activa si existe ASFI_HMAC_SECRET; sin esa variable el
+    # servicio se comporta exactamente igual que antes.
+    from shared.seguridad import instalar_middleware
+    if instalar_middleware(bank_app):
+        print(f'[seguridad] Banco {b_id}: firma HMAC entre nodos ACTIVA')
+
     @bank_app.get("/cuentas", tags=[f"Banco {b_id} - Acceso Directo"])
     def read_accounts_direct(
         offset: int = Query(default=0, ge=0),

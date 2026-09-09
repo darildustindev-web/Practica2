@@ -58,6 +58,6 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir',type=Path,required=True)
     parser.add_argument('--workers',type=int,default=2)
-    parser.add_argument('--output',type=Path,default=Path('/tmp/asfi-conversion-benchmark.json'))
+    parser.add_argument('--output',type=Path,default=Path(__file__).resolve().parents[1]/'docs'/'benchmark-conversion.json')
     args=parser.parse_args()
     asyncio.run(benchmark(args.source_dir,args.workers,args.output))
